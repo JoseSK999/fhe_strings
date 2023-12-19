@@ -1,51 +1,59 @@
-use rayon::iter::ParallelBridge;
+use rayon::{vec::IntoIter, prelude::*};
 use tfhe::integer::RadixCiphertext;
 use crate::ciphertext::{FheAsciiChar, FheString};
-use crate::server_key::{FheStringIsEmpty, FheStringLen, ServerKey};
+use crate::server_key::{CharIter, FheStringIsEmpty, FheStringLen, ServerKey};
 use crate::server_key::pattern::IsMatch;
 
 impl ServerKey {
     // Compare pat with str, with pat shifted right (in relation to str) the number of times given
     // by iter. Returns the first character index of the last match, or the first character index
     // of the first match if the range is reversed. If there's no match defaults to 0
-    fn compare_shifted_index<'a, I, U, V>(
+    fn compare_shifted_index(
         &self,
-        str_pat: (U, V),
-        iter: I,
+        str_pat: (CharIter, CharIter),
+        par_iter: IntoIter<usize>,
         ignore_pat_pad: bool,
     ) -> (RadixCiphertext, RadixCiphertext)
-        where I: Iterator<Item = usize>,
-              U: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
-              V: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
     {
         let mut result = self.key.create_trivial_zero_radix(1);
         let mut last_match_index = self.key.create_trivial_zero_radix(16);
         let (str, pat) = str_pat;
 
-        for start in iter {
+        let matched: Vec<_> = par_iter.map(|start| {
 
             let str_chars = str.clone().skip(start);
             let pat_chars = pat.clone();
 
-            let str_pat = str_chars.into_iter()
-                .zip(pat_chars)
-                .par_bridge();
+            let is_matched = if ignore_pat_pad {
+                let str_pat = str_chars.into_iter()
+                    .zip(pat_chars)
+                    .par_bridge();
 
-            let mut is_matched = if ignore_pat_pad {
                 self.asciis_eq_ignore_pat_pad(str_pat)
             } else {
-                self.asciis_eq(str_pat)
+                let a: Vec<&FheAsciiChar> = str_chars.collect();
+                let b: Vec<&FheAsciiChar> = pat_chars.collect();
+
+                self.asciis_eq(a.into_iter(), b.into_iter())
             };
 
-            let index = self.key.create_trivial_radix(start as u32, 16);
-            last_match_index = self.key.if_then_else_parallelized(
-                &is_matched,
-                &index,
-                &last_match_index,
-            );
+            (start, is_matched)
+        }).collect();
 
-            // One of the possible values of the padded pat must match the str
-            self.key.smart_bitor_assign_parallelized(&mut result, &mut is_matched);
+        for (i, is_matched) in matched {
+            let index = self.key.create_trivial_radix(i as u32, 16);
+
+            rayon::join(
+                || {
+                    last_match_index = self.key.if_then_else_parallelized(
+                        &is_matched,
+                        &index,
+                        &last_match_index,
+                    )
+                },
+                // One of the possible values of the padded pat must match the str
+                || self.key.bitor_assign_parallelized(&mut result, &is_matched),
+            );
         }
 
         (last_match_index, result)
@@ -102,7 +110,9 @@ impl ServerKey {
 
         let (str_iter, pat_iter, iter) = self.contains_cases(str, pat, null.as_ref());
 
-        self.compare_shifted_index((str_iter, pat_iter), iter.rev(), ignore_pat_pad)
+        let iter_values: Vec<_> = iter.rev().collect();
+
+        self.compare_shifted_index((str_iter, pat_iter), iter_values.into_par_iter(), ignore_pat_pad)
     }
 
     /// Searches for the given encrypted pattern in this encrypted string, and returns
@@ -158,42 +168,54 @@ impl ServerKey {
 
         let ignore_pat_pad = pat.is_padded();
 
-        let (null, ext_iter): (_, Option<Box<dyn DoubleEndedIterator<Item=usize>>>) =
-            if !str.is_padded() && pat.is_padded() {
-                (
-                    Some(FheAsciiChar::null(self)),
-                    Some(Box::new(0..str_len + 1)),
-                )
+        let (null, ext_iter) = if !str.is_padded() && pat.is_padded() {
+                (Some(FheAsciiChar::null(self)), Some(0..str_len + 1))
             } else {
                 (None, None)
             };
 
         let (str_iter, pat_iter, iter) = self.contains_cases(str, pat, null.as_ref());
 
-        let (mut last_match_index, result) = self.compare_shifted_index(
-            (str_iter, pat_iter),
-            ext_iter.unwrap_or(iter),
-            ignore_pat_pad,
-        );
+        let iter_values: Vec<_> = ext_iter.unwrap_or(iter).collect();
 
-        // The non padded str case is handled thanks to + 1 in the ext_iter
-        if str.is_padded() && pat.is_padded() {
-            // We have to check if pat is empty as in that case the returned index is str.len()
-            // (the actual length) which doesn't correspond to our `last_match_index`
-            if let FheStringIsEmpty::Padding(is_empty) = self.is_empty(pat) {
-                let str_true_len = match self.len(str) {
-                    FheStringLen::Padding(cipher_len) => cipher_len,
-                    FheStringLen::NoPadding(len) => {
-                        self.key.create_trivial_radix(len as u32, 16)
-                    },
+        let ((mut last_match_index, result), option) = rayon::join(
+            || {
+                self.compare_shifted_index(
+                    (str_iter, pat_iter),
+                    iter_values.into_par_iter(),
+                    ignore_pat_pad,
+                )
+            },
+            || {
+                // We have to check if pat is empty as in that case the returned index is str.len()
+                // (the actual length) which doesn't correspond to our `last_match_index`
+                let padded_pat_is_empty = match self.is_empty(pat) {
+                    FheStringIsEmpty::Padding(is_empty) => Some(is_empty),
+                    _ => None,
                 };
 
-                last_match_index = self.key.if_then_else_parallelized(
-                    &is_empty,
-                    &str_true_len,
-                    &last_match_index,
-                );
+                // The non padded str case was handled thanks to + 1 in the ext_iter
+                if str.is_padded() && padded_pat_is_empty.is_some() {
+                    let str_true_len = match self.len(str) {
+                        FheStringLen::Padding(cipher_len) => cipher_len,
+                        FheStringLen::NoPadding(len) => {
+                            self.key.create_trivial_radix(len as u32, 16)
+                        },
+                    };
+
+                    Some((padded_pat_is_empty.unwrap(), str_true_len))
+                } else {
+                    None
+                }
             }
+        );
+
+        if let Some((pat_is_empty, str_true_len)) = option {
+            last_match_index = self.key.if_then_else_parallelized(
+                &pat_is_empty,
+                &str_true_len,
+                &last_match_index,
+            );
         }
 
         (last_match_index, result)

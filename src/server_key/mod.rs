@@ -67,33 +67,38 @@ pub enum FheStringIsEmpty {
 // A few helper functions for the implementations
 impl ServerKey {
 
-    // If an iterator is longer than the other, the "excess" characters are ignored
-    fn asciis_eq<'a, I>(
+    // If an iterator is longer than the other, the "excess" characters are ignored. This function performs the
+    // equality check by transforming the `str` and `pat` chars into two UInts
+    fn asciis_eq<'a, I, U>(
         &self,
-        str_pat: I,
+        str: I,
+        pat: U,
     ) -> RadixCiphertext
-        where
-            I: ParallelIterator<Item = (&'a FheAsciiChar, &'a FheAsciiChar)>,
+        where I: DoubleEndedIterator<Item = &'a FheAsciiChar>,
+              U: DoubleEndedIterator<Item = &'a FheAsciiChar>,
     {
-        let mut or = self.key.create_trivial_zero_radix(4);
+        let blocks_str = str.into_iter().rev()
+            .flat_map(|c| c.ciphertext().blocks().to_owned())
+            .collect();
 
-        let xors: Vec<_> = str_pat.map(|(str_char, pat_char)| {
+        let blocks_pat = pat.into_iter().rev()
+            .flat_map(|c| c.ciphertext().blocks().to_owned())
+            .collect();
 
-            self.key.bitxor_parallelized(
-                str_char.ciphertext(),
-                pat_char.ciphertext(),
-            )
-        }).collect();
+        let mut uint_str = RadixCiphertext::from_blocks(blocks_str);
+        let mut uint_pat = RadixCiphertext::from_blocks(blocks_pat);
 
-        for mut xored in xors {
-            self.key.smart_bitor_assign_parallelized(&mut or, &mut xored);
+        self.trim_ciphertexs_lsb(&mut uint_str, &mut uint_pat);
+
+        let result = self.key.eq_parallelized(&uint_str, &uint_pat);
+        let len = result.blocks().len();
+
+        if len > 1 {
+            // Return just the block containing the boolean value
+            self.key.trim_radix_blocks_msb(&result, len - 1)
+        } else {
+            result
         }
-
-        // This will only be true if all characters were equal, as all the XORs would be 0u8
-        let result = self.key.smart_scalar_eq_parallelized(&mut or, 0u8);
-
-        // Return just the block containing the boolean value
-        self.key.trim_radix_blocks_msb(&result, 3)
     }
 
     fn asciis_eq_ignore_pat_pad<'a, I>(
@@ -106,18 +111,17 @@ impl ServerKey {
         let mut result = self.key.create_trivial_radix(1, 1);
 
         let eq_or_null_pat: Vec<_> = str_pat.map(|(str_char, pat_char)| {
-            let mut eq_or_null = self.key.eq_parallelized(
-                str_char.ciphertext(),
-                pat_char.ciphertext(),
+            let (mut are_eq, mut pat_is_null) = rayon::join(
+                || self.key.eq_parallelized(
+                    str_char.ciphertext(),
+                    pat_char.ciphertext(),
+                ),
+                || self.key.scalar_eq_parallelized(pat_char.ciphertext(), 0u8),
             );
-
-            let mut is_null = self.key.scalar_eq_parallelized(pat_char.ciphertext(), 0u8);
 
             // If `pat_char` is null then `are_eq` is set to true. Hence if ALL `pat_char`s are
             // null, the result is always true, which is correct since the pattern is empty
-            self.key.smart_bitor_assign_parallelized(&mut eq_or_null, &mut is_null);
-
-            eq_or_null
+            self.key.smart_bitor_parallelized(&mut are_eq, &mut pat_is_null)
         }).collect();
 
         for mut eq_or_null in eq_or_null_pat {
@@ -156,6 +160,23 @@ impl ServerKey {
             Ordering::Greater => {
                 let diff = cipher_len - len;
                 self.key.trim_radix_blocks_msb_assign(cipher, diff);
+            },
+            _ => (),
+        }
+    }
+
+    fn trim_ciphertexs_lsb(&self, lhs: &mut RadixCiphertext, rhs: &mut RadixCiphertext) {
+        let lhs_blocks = lhs.blocks().len();
+        let rhs_blocks = rhs.blocks().len();
+
+        match lhs_blocks.cmp(&rhs_blocks) {
+            Ordering::Less => {
+                let diff = rhs_blocks - lhs_blocks;
+                self.key.trim_radix_blocks_lsb_assign(rhs, diff);
+            },
+            Ordering::Greater => {
+                let diff = lhs_blocks - rhs_blocks;
+                self.key.trim_radix_blocks_lsb_assign(lhs, diff);
             },
             _ => (),
         }

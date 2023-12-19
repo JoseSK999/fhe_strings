@@ -33,49 +33,63 @@ impl ServerKey {
         //
         // 4. We get [lhs, to, rhs]
 
-        let str_len = self.key.create_trivial_radix(str.chars().len() as u32, 16);
-        let real_from_len = match self.len(from) {
-            FheStringLen::Padding(enc_val) => enc_val,
-            FheStringLen::NoPadding(val) => {
-                self.key.create_trivial_radix(val as u32, 16)
-            }
-        };
+        let (mut replaced, rhs) = rayon::join(
+            || {
+                let str_len = self.key.create_trivial_radix(str.chars().len() as u32, 16);
 
-        // Get the [rhs] shifting left by [lhs, from].len()
-        let shift_left = self.key.add_parallelized(&index, &real_from_len);
-        let mut rhs = self.left_shift_chars(str, &shift_left);
-        rhs.set_is_padded(true);
+                // Get the [lhs] shifting right by [from, rhs].len()
+                let shift_right = self.key.sub_parallelized(&str_len, &index);
+                let mut lhs = self.right_shift_chars(str, &shift_right);
+                // As lhs is shifted right we know there aren't nulls on the right (unless it's empty)
+                lhs.set_is_padded(false);
 
-        // Get the [lhs] shifting right by [from, rhs].len()
-        let shift_right = self.key.sub_parallelized(&str_len, &index);
-        let mut lhs = self.right_shift_chars(str, &shift_right);
-        // As lhs is shifted right we know there aren't nulls on the right (unless it's empty)
-        lhs.set_is_padded(false);
+                let mut replaced = self.concat(&lhs, to);
 
-        let mut replaced = self.concat(&lhs, to);
+                // Reverse the shifting such that nulls go to the new end
+                replaced = self.left_shift_chars(&replaced, &shift_right);
+                replaced.set_is_padded(true);
 
-        // Reverse the shifting such that nulls go to the new end
-        replaced = self.left_shift_chars(&replaced, &shift_right);
-        replaced.set_is_padded(true);
+                replaced
+            },
+            || {
+                let real_from_len = match self.len(from) {
+                    FheStringLen::Padding(enc_val) => enc_val,
+                    FheStringLen::NoPadding(val) => {
+                        self.key.create_trivial_radix(val as u32, 16)
+                    }
+                };
+
+                // Get the [rhs] shifting left by [lhs, from].len()
+                let shift_left = self.key.add_parallelized(&index, &real_from_len);
+                let mut rhs = self.left_shift_chars(str, &shift_left);
+                rhs.set_is_padded(true);
+
+                rhs
+            },
+        );
 
         replaced = self.concat(&replaced, &rhs);
 
-        // If there's match we return [lhs, to].len(), else we return 0 (index default)
-        let real_to_len = match self.len(to) {
-            FheStringLen::Padding(enc_val) => enc_val,
-            FheStringLen::NoPadding(val) => {
-                self.key.create_trivial_radix(val as u32, 16)
-            }
-        };
-        let add_to_index = self.key.if_then_else_parallelized(
-            &is_match,
-            &real_to_len,
-            &self.key.create_trivial_zero_radix(16),
-        );
-        let return_index = self.key.add_parallelized(&index, &add_to_index);
+        let (return_str, return_index) = rayon::join(
+            // Return the replaced value only when there is match, else return the original str
+            || self.conditional_string(&is_match, replaced, str),
 
-        // Return the replaced value only when there is match, else return the original str
-        let return_str = self.conditional_string(&is_match, replaced, str);
+            || {
+                // If there's match we return [lhs, to].len(), else we return 0 (index default)
+                let real_to_len = match self.len(to) {
+                    FheStringLen::Padding(enc_val) => enc_val,
+                    FheStringLen::NoPadding(val) => {
+                        self.key.create_trivial_radix(val as u32, 16)
+                    }
+                };
+                let add_to_index = self.key.if_then_else_parallelized(
+                    &is_match,
+                    &real_to_len,
+                    &self.key.create_trivial_zero_radix(16),
+                );
+                self.key.add_parallelized(&index, &add_to_index)
+            },
+        );
 
         (return_str, return_index)
     }
@@ -90,42 +104,51 @@ impl ServerKey {
     ) {
         let mut skip = self.key.create_trivial_zero_radix(16);
 
-        let from_is_empty = match self.is_empty(from) {
-            FheStringIsEmpty::Padding(enc) => enc,
-            FheStringIsEmpty::NoPadding(clear) => self.key.create_trivial_radix(clear as u32, 1),
-        };
-
-        let real_str_len = match self.len(result) {
-            FheStringLen::Padding(enc_val) => enc_val,
-            FheStringLen::NoPadding(val) => {
-                self.key.create_trivial_radix(val as u32, 16)
-            }
-        };
+        let (from_is_empty, real_str_len) = rayon::join(
+            || match self.is_empty(from) {
+                FheStringIsEmpty::Padding(enc) => enc,
+                FheStringIsEmpty::NoPadding(clear) => self.key.create_trivial_radix(clear as u32, 1),
+            },
+            || match self.len(result) {
+                FheStringLen::Padding(enc_val) => enc_val,
+                FheStringLen::NoPadding(val) => {
+                    self.key.create_trivial_radix(val as u32, 16)
+                }
+            },
+        );
 
         for i in 0..iterations {
             let prev = result.clone();
             (*result, skip) = self.replace_once(result, from, to, &skip);
 
-            // If `from_is_empty` and our iteration exceeds the length of the str, that means
-            // there cannot be more empty string matches.
-            //
-            // For instance "ww" can at most have 3 empty string matches, so we only take the
-            // result at iteration 0, 1, and 2
+            rayon::join(
+                || {
+                    let (mut no_more_matches, enc_n_is_exceeded) = rayon::join(
+                        // If `from_is_empty` and our iteration exceeds the length of the str, that means
+                        // there cannot be more empty string matches.
+                        //
+                        // For instance "ww" can at most have 3 empty string matches, so we only take the
+                        // result at iteration 0, 1, and 2
+                        || {
+                            let no_more_matches = self.key.scalar_lt_parallelized(&real_str_len, i);
 
-            let mut no_more_matches = self.key
-                .scalar_lt_parallelized(&real_str_len, i);
-            self.key.bitand_assign_parallelized(&mut no_more_matches, &from_is_empty);
+                            self.key.bitand_parallelized(&no_more_matches, &from_is_empty)
+                        },
 
-            if let Some(n) = enc_n {
-                let n_is_exceeded = self.key.scalar_le_parallelized(n, i);
-                self.key.bitor_assign_parallelized(&mut no_more_matches, &n_is_exceeded);
-            }
+                        || enc_n.map(|n| self.key.scalar_le_parallelized(n, i)),
+                    );
 
-            *result = self.conditional_string(&no_more_matches, prev, result);
+                    if let Some(exceeded) = enc_n_is_exceeded {
+                        self.key.bitor_assign_parallelized(&mut no_more_matches, &exceeded);
+                    }
 
-            // If we replace "" to "a" in the "ww" str, we get "awawa". So when `from_is_empty`
-            // we need to move to the next space between letters by adding 1 to the skip value
-            self.key.add_assign_parallelized(&mut skip, &from_is_empty);
+                    *result = self.conditional_string(&no_more_matches, prev, result)
+                },
+
+                // If we replace "" to "a" in the "ww" str, we get "awawa". So when `from_is_empty`
+                // we need to move to the next space between letters by adding 1 to the skip value
+                || self.key.add_assign_parallelized(&mut skip, &from_is_empty),
+            );
         }
     }
 
@@ -204,8 +227,8 @@ impl ServerKey {
 
                         let mut re = self.conditional_string(&n_is_zero, result, to);
 
-                        // TODO when result or to are empty we get padding via the conditional_string > pad_ciphertexts_lsb
-                        // And the condition result may or may not have padding in this case. We have to append the null internally
+                        // When result or to are empty we get padding via the conditional_string > pad_ciphertexts_lsb
+                        // And the condition result may or may not have padding in this case.
                         re.append_null(self);
                         return re
                     }
@@ -225,8 +248,8 @@ impl ServerKey {
 
                     let mut re = self.conditional_string(&and_val, to.clone(), str);
 
-                    // TODO when result or to are empty we get padding via the conditional_string > pad_ciphertexts_lsb
-                    // And the condition result may or may not have padding in this case. We have to append the null internally
+                    // When result or to are empty we get padding via the conditional_string > pad_ciphertexts_lsb
+                    // And the condition result may or may not have padding in this case.
                     re.append_null(self);
                     return re
                 }

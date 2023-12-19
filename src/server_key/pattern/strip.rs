@@ -1,20 +1,18 @@
-use rayon::iter::ParallelBridge;
+use std::ops::Range;
+use rayon::prelude::*;
 use tfhe::integer::RadixCiphertext;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::pattern::IsMatch;
-use crate::server_key::{FheStringLen, ServerKey};
+use crate::server_key::{CharIter, FheStringLen, ServerKey};
 
 impl ServerKey {
-    fn compare_shifted_strip<'a, I, U, V>(
+    fn compare_shifted_strip(
         &self,
         strip_str: &mut FheString,
-        str_pat: (U, V),
-        iter: I,
+        str_pat: (CharIter, CharIter),
+        iter: Range<usize>,
         ignore_pat_pad: bool,
     ) -> RadixCiphertext
-        where I: Iterator<Item = usize>,
-              U: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
-              V: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
     {
         let mut result = self.key.create_trivial_zero_radix(1);
         let (str, pat) = str_pat;
@@ -26,14 +24,17 @@ impl ServerKey {
             let str_chars = str.clone().skip(start);
             let pat_chars = pat.clone();
 
-            let str_pat = str_chars.into_iter()
-                .zip(pat_chars)
-                .par_bridge();
-
             let mut is_matched = if ignore_pat_pad {
+                let str_pat = str_chars.into_iter()
+                    .zip(pat_chars)
+                    .par_bridge();
+
                 self.asciis_eq_ignore_pat_pad(str_pat)
             } else {
-                self.asciis_eq(str_pat)
+                let a: Vec<&FheAsciiChar> = str_chars.collect();
+                let b: Vec<&FheAsciiChar> = pat_chars.collect();
+
+                self.asciis_eq(a.into_iter(), b.into_iter())
             };
 
             let mut mask = self.key.extend_radix_with_trivial_zero_blocks_msb(&is_matched, 3);
@@ -47,12 +48,16 @@ impl ServerKey {
                 &mut strip_str.chars_mut()[start..]
             };
 
-            for char in mutate_chars {
-                self.key.bitand_assign_parallelized(char.ciphertext_mut(), &mask);
-            }
-
-            // One of the possible values of pat must match the str
-            self.key.smart_bitor_assign_parallelized(&mut result, &mut is_matched);
+            rayon::join(
+                || {
+                    mutate_chars.par_iter_mut()
+                        .for_each(|char| {
+                        self.key.bitand_assign_parallelized(char.ciphertext_mut(), &mask);
+                    });
+                },
+                // One of the possible values of pat must match the str
+                || self.key.smart_bitor_assign_parallelized(&mut result, &mut is_matched),
+            );
         }
 
         result
@@ -93,7 +98,7 @@ impl ServerKey {
     pub fn strip_prefix(&self, str: &FheString, pat: &FheString) -> (FheString, RadixCiphertext) {
         let mut result = str.clone();
 
-        let starts_with = match self.length_checks(str, pat) {
+        match self.length_checks(str, pat) {
             // If IsMatch is Clear we return the same string (a true means the pattern is empty)
             IsMatch::Clear(bool) => {
                 return (result, self.key.create_trivial_radix(bool as u8, 1))
@@ -102,15 +107,20 @@ impl ServerKey {
             IsMatch::Cipher(val) => {
                 return (result, val)
             },
-            _ => self.starts_with(str, pat),
+            _ => (),
         };
 
-        let real_pat_len = match self.len(pat) {
-            FheStringLen::Padding(enc_val) => enc_val,
-            FheStringLen::NoPadding(val) => {
-                self.key.create_trivial_radix(val as u32, 16)
+        let (starts_with, real_pat_len) = rayon::join(
+            || self.starts_with(str, pat),
+            || {
+                match self.len(pat) {
+                    FheStringLen::Padding(enc_val) => enc_val,
+                    FheStringLen::NoPadding(val) => {
+                        self.key.create_trivial_radix(val as u32, 16)
+                    }
+                }
             }
-        };
+        );
 
         // If there's match we shift the str left by `real_pat_len` (removing the prefix and adding nulls at the end),
         // else we shift it left by 0

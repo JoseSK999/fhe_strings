@@ -1,7 +1,6 @@
-use rayon::prelude::ParallelBridge;
 use tfhe::integer::RadixCiphertext;
-use crate::ciphertext::{FheAsciiChar, FheString};
-use crate::server_key::{CharIter, FheStringIsEmpty, ServerKey};
+use crate::ciphertext::FheString;
+use crate::server_key::{FheStringIsEmpty, ServerKey};
 
 impl ServerKey {
     fn eq_length_checks(&self, lhs: &FheString, rhs: &FheString) -> Option<RadixCiphertext> {
@@ -65,40 +64,12 @@ impl ServerKey {
     pub fn eq(&self, lhs: &FheString, rhs: &FheString) -> RadixCiphertext {
         if let Some(val) = self.eq_length_checks(lhs, rhs) { return val }
 
-        let lhs_len = lhs.chars().len();
-        let rhs_len = rhs.chars().len();
+        let mut lhs_uint = lhs.to_uint(self);
+        let mut rhs_uint = rhs.to_uint(self);
 
-        // We have to append a null to the non padded part such that "xx" != "xxx\0"
-        let null = if (!lhs.is_padded() && lhs_len < rhs_len - 1) ||
-            (!rhs.is_padded() && rhs_len < lhs_len - 1) {
-            Some(FheAsciiChar::null(self))
-        } else {
-            None
-        };
+        self.pad_ciphertexts_lsb(&mut lhs_uint, &mut rhs_uint);
 
-        let lhs_chars = if !lhs.is_padded() && lhs_len < rhs_len - 1 {
-            let chars = lhs.chars().iter()
-                .chain(std::iter::once(null.as_ref().unwrap()));
-
-            CharIter::Extended(chars)
-        } else {
-            CharIter::Iter(lhs.chars().iter())
-        };
-
-        let rhs_chars = if !rhs.is_padded() && rhs_len < lhs_len - 1 {
-            let chars = rhs.chars().iter()
-                .chain(std::iter::once(null.as_ref().unwrap()));
-
-            CharIter::Extended(chars)
-        } else {
-            CharIter::Iter(rhs.chars().iter())
-        };
-
-        let lhs_rhs = lhs_chars.into_iter()
-            .zip(rhs_chars)
-            .par_bridge();
-
-        self.asciis_eq(lhs_rhs)
+        self.key.eq_parallelized(&lhs_uint, &rhs_uint)
     }
 
     /// Returns `true` if two encrypted strings are not equal.

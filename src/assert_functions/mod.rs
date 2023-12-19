@@ -1180,7 +1180,7 @@ impl Keys {
         let (pat, pat_pad) = (pat.0, pat.1);
         let (to, to_pad) = (to.0, to.1);
 
-        let expected = str.replace(pat, to);
+        let expected = str.replacen(pat, to, n as usize);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
         let enc_pat = FheString::new(&self.ck, pat, pat_pad);

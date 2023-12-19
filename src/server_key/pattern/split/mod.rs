@@ -14,27 +14,37 @@ impl ServerKey {
         inclusive: bool,
     ) -> (FheString, FheString) {
         let str_len = self.key.create_trivial_radix(str.chars().len() as u32, 16);
-        let real_pat_len = match self.len(pat) {
-            FheStringLen::Padding(enc_val) => enc_val,
-            FheStringLen::NoPadding(val) => {
-                self.key.create_trivial_radix(val as u32, 16)
-            }
-        };
 
-        let mut shift_right = self.key.sub_parallelized(&str_len, index);
-        if inclusive {
-            // Remove the real pattern length from the amount to shift
-            self.key.sub_assign_parallelized(&mut shift_right, &real_pat_len);
-        }
+        let (mut shift_right, real_pat_len) = rayon::join(
+            || self.key.sub_parallelized(&str_len, index),
 
-        let shift_left = self.key.add_parallelized(&real_pat_len, index);
+            || match self.len(pat) {
+                FheStringLen::Padding(enc_val) => enc_val,
+                FheStringLen::NoPadding(val) => {
+                    self.key.create_trivial_radix(val as u32, 16)
+                }
+            },
+        );
 
-        let mut lhs = self.right_shift_chars(str, &shift_right);
-        // lhs potentially has nulls in the leftmost chars as we have shifted str right, so we move back the nulls to
-        // the end by performing the reverse shift
-        lhs = self.left_shift_chars(&lhs, &shift_right);
+        let (mut lhs, mut rhs) = rayon::join(
+            || {
+                if inclusive {
+                    // Remove the real pattern length from the amount to shift
+                    self.key.sub_assign_parallelized(&mut shift_right, &real_pat_len);
+                }
 
-        let mut rhs = self.left_shift_chars(str, &shift_left);
+                let lhs = self.right_shift_chars(str, &shift_right);
+
+                // lhs potentially has nulls in the leftmost chars as we have shifted str right, so we move back the
+                // nulls to the end by performing the reverse shift
+                self.left_shift_chars(&lhs, &shift_right)
+            },
+            || {
+                let shift_left = self.key.add_parallelized(&real_pat_len, index);
+
+                self.left_shift_chars(str, &shift_left)
+            },
+        );
 
         // If original str is padded we set both sub strings padded as well. If str was not padded, then we don't know
         // if a sub string is padded or not, so we add a null to both because we cannot assume one isn't padded
@@ -223,21 +233,24 @@ struct SplitNoLeading {
 impl FheStringIterator for SplitInternal {
     fn next(&mut self, sk: &ServerKey) -> (FheString, RadixCiphertext) {
 
-        let (mut index, mut is_some) = if let SplitType::RSplit = self.split_type {
-            sk.rfind(&self.state, &self.pat)
-        } else {
-            sk.find(&self.state, &self.pat)
-        };
-
-        let pat_is_empty = match sk.is_empty(&self.pat) {
-            FheStringIsEmpty::Padding(mut enc) => {
-                sk.key.extend_radix_with_trivial_zero_blocks_msb_assign(&mut enc, 15);
-                enc
+        let ((mut index, mut is_some), pat_is_empty) = rayon::join(
+            || {
+                if let SplitType::RSplit = self.split_type {
+                    sk.rfind(&self.state, &self.pat)
+                } else {
+                    sk.find(&self.state, &self.pat)
+                }
             },
-            FheStringIsEmpty::NoPadding(clear) => {
-                sk.key.create_trivial_radix(clear as u32, 16)
+            || match sk.is_empty(&self.pat) {
+                FheStringIsEmpty::Padding(mut enc) => {
+                    sk.key.extend_radix_with_trivial_zero_blocks_msb_assign(&mut enc, 15);
+                    enc
+                },
+                FheStringIsEmpty::NoPadding(clear) => {
+                    sk.key.create_trivial_radix(clear as u32, 16)
+                },
             },
-        };
+        );
 
         if self.counter > 0 {
             // If pattern is empty and we aren't in the first next call, we add (in the Split case)
@@ -317,10 +330,17 @@ impl FheStringIterator for SplitNInternal {
                 let n_minus_one = sk.key.scalar_sub_parallelized(enc_n.cipher(), 1);
                 let exceeded = sk.key.scalar_le_parallelized(&n_minus_one, self.counter);
 
-                result = sk.conditional_string(&exceeded, state, &result);
+                rayon::join(
+                    || result = sk.conditional_string(&exceeded, state, &result),
 
-                let false_ct = sk.key.create_trivial_zero_radix(1);
-                self.not_exceeded = sk.key.if_then_else_parallelized(&exceeded, &false_ct, &self.not_exceeded);
+                    || {
+                        self.not_exceeded = sk.key.if_then_else_parallelized(
+                            &exceeded,
+                            &sk.key.create_trivial_zero_radix(1),
+                            &self.not_exceeded,
+                        );
+                    },
+                );
             }
         }
 
@@ -334,16 +354,18 @@ impl FheStringIterator for SplitNoTrailing {
     fn next(&mut self, sk: &ServerKey) -> (FheString, RadixCiphertext) {
         let (result, mut is_some) = self.internal.next(sk);
 
-        // It's possible that the returned value is Some but it's wrapping the remaining state (if
-        // prev_was_some is false). If this is the case and we have a trailing empty string, we
-        // return None to remove it
-        let result_is_empty = match sk.is_empty(&result) {
-            FheStringIsEmpty::Padding(enc) => enc,
-            FheStringIsEmpty::NoPadding(clear) => sk.key.create_trivial_radix(clear as u32, 1),
-        };
+        let (result_is_empty, prev_was_none) = rayon::join(
+            // It's possible that the returned value is Some but it's wrapping the remaining state (if
+            // prev_was_some is false). If this is the case and we have a trailing empty string, we
+            // return None to remove it
+            || match sk.is_empty(&result) {
+                FheStringIsEmpty::Padding(enc) => enc,
+                FheStringIsEmpty::NoPadding(clear) => sk.key.create_trivial_radix(clear as u32, 1),
+            },
+            // Invert the bit value (01 XOR 01 = 00 and 00 XOR 01 = 01)
+            || sk.key.scalar_bitxor_parallelized(&self.internal.prev_was_some, 1u8),
+        );
 
-        // Invert the bit value (01 XOR 01 = 00 and 00 XOR 01 = 01)
-        let prev_was_none = sk.key.scalar_bitxor_parallelized(&self.internal.prev_was_some, 1u8);
         let trailing_empty_str = sk.key.bitand_parallelized(&result_is_empty, &prev_was_none);
 
         is_some = sk.key.if_then_else_parallelized(
@@ -365,15 +387,21 @@ impl FheStringIterator for SplitNoLeading {
 
         let (result, is_some) = self.internal.next(sk);
 
-        let return_result = sk.conditional_string(
-            &self.leading_empty_str,
-            result.clone(),
-            &self.prev_return.0,
-        );
-        let return_is_some = sk.key.if_then_else_parallelized(
-            &self.leading_empty_str,
-            &is_some,
-            &self.prev_return.1,
+        let (return_result, return_is_some) = rayon::join(
+            || {
+                sk.conditional_string(
+                    &self.leading_empty_str,
+                    result.clone(),
+                    &self.prev_return.0,
+                )
+            },
+            || {
+                sk.key.if_then_else_parallelized(
+                    &self.leading_empty_str,
+                    &is_some,
+                    &self.prev_return.1,
+                )
+            }
         );
 
         self.prev_return = (result, is_some);

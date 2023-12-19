@@ -4,6 +4,7 @@ mod find;
 mod split;
 mod replace;
 
+use std::ops::Range;
 use tfhe::integer::RadixCiphertext;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::{CharIter, FheStringIsEmpty, ServerKey};
@@ -61,7 +62,7 @@ impl ServerKey {
     ) -> (
         CharIter,
         CharIter,
-        Box<dyn Iterator<Item = usize>>,
+        Range<usize>,
     )
     {
         let pat_len = pat.chars().len();
@@ -76,7 +77,9 @@ impl ServerKey {
 
                 let start = str_len - pat_len;
 
-                (CharIter::Iter(str_chars), CharIter::Iter(pat_chars), Box::new(start..start + 1))
+                let range = start..start + 1;
+
+                (CharIter::Iter(str_chars), CharIter::Iter(pat_chars), range)
             }
 
             // If only str is padded we have to check all the possible padding cases. If str is 3
@@ -88,7 +91,9 @@ impl ServerKey {
 
                 let diff = (str_len - 1) - pat_len;
 
-                (CharIter::Iter(str_chars), CharIter::Extended(pat_chars), Box::new(0..=diff))
+                let range = 0..diff + 1;
+
+                (CharIter::Iter(str_chars), CharIter::Extended(pat_chars), range)
             }
 
             // If only pat is padded we have to check all the possible padding cases as well
@@ -114,14 +119,16 @@ impl ServerKey {
                     )
                 };
 
-                (CharIter::Extended(str_chars), CharIter::Iter(pat_chars), Box::new(range))
+                (CharIter::Extended(str_chars), CharIter::Iter(pat_chars), range)
             }
 
             (true, true) => {
                 let str_chars = str.chars().iter();
                 let pat_chars = pat.chars().iter();
 
-                (CharIter::Iter(str_chars), CharIter::Iter(pat_chars), Box::new(0..str_len))
+                let range = 0..str_len;
+
+                (CharIter::Iter(str_chars), CharIter::Iter(pat_chars), range)
             }
         }
     }
@@ -134,7 +141,7 @@ impl ServerKey {
     ) -> (
         CharIter,
         CharIter,
-        Box<dyn DoubleEndedIterator<Item = usize>>,
+        Range<usize>,
     ) {
         let pat_len = pat.chars().len();
         let str_len = str.chars().len();
@@ -144,13 +151,17 @@ impl ServerKey {
             (_, false) => {
                 let diff = (str_len - pat_len) - if str.is_padded() { 1 } else { 0 };
 
-                (CharIter::Iter(str.chars().iter()), CharIter::Iter(pat.chars().iter()), Box::new(0..=diff))
+                let range = 0..diff + 1;
+
+                (CharIter::Iter(str.chars().iter()), CharIter::Iter(pat.chars().iter()), range)
             }
 
             (true, true) => {
                 let pat_chars = pat.chars()[..pat_len - 1].iter();
 
-                (CharIter::Iter(str.chars().iter()), CharIter::Iter(pat_chars), Box::new(0..str_len - 1))
+                let range = 0..str_len - 1;
+
+                (CharIter::Iter(str.chars().iter()), CharIter::Iter(pat_chars), range)
             }
 
             (false, true) => {
@@ -158,7 +169,9 @@ impl ServerKey {
                 let str_chars = str.chars().iter()
                     .chain(std::iter::once(null.unwrap()));
 
-                (CharIter::Extended(str_chars), CharIter::Iter(pat_chars), Box::new(0..str_len))
+                let range = 0..str_len;
+
+                (CharIter::Extended(str_chars), CharIter::Iter(pat_chars), range)
             }
         }
     }

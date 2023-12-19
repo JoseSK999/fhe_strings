@@ -142,7 +142,6 @@ fn main() {
     keys.assert_replacen((str, str_pad), (pat, pat_pad), (to, to_pad), n, max);
 }
 
-/// Useful struct
 struct Keys {
     ck: ClientKey,
     sk: ServerKey,

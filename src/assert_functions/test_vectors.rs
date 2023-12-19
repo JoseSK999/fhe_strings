@@ -406,7 +406,7 @@ fn test_replacen() {
 }
 
 #[test]
-fn test_replace() {
+fn test_replace_real() {
     let keys = Keys::new();
 
     for ((str, str_pad), (from, from_pad), (to, to_pad)) in TEST_CASES_REPLACE {

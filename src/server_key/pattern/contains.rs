@@ -1,4 +1,5 @@
-use rayon::prelude::ParallelBridge;
+use rayon::prelude::*;
+use rayon::range::Iter;
 use tfhe::integer::RadixCiphertext;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::ServerKey;
@@ -6,36 +7,37 @@ use crate::server_key::pattern::{CharIter, IsMatch};
 
 impl ServerKey {
     // Compare pat with str, with pat shifted right (in relation to str) the number given by iter
-    fn compare_shifted<'a, I, U, V>(
+    fn compare_shifted(
         &self,
-        str_pat: (U, V),
-        iter: I,
+        str_pat: (CharIter, CharIter),
+        par_iter: Iter<usize>,
         ignore_pat_pad: bool,
     ) -> RadixCiphertext
-        where I: Iterator<Item = usize>,
-              U: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
-              V: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
     {
         let mut result = self.key.create_trivial_zero_radix(1);
         let (str, pat) = str_pat;
 
-        for start in iter {
-
+        let matched: Vec<_> = par_iter.map(|start| {
             let str_chars = str.clone().skip(start);
             let pat_chars = pat.clone();
 
-            let str_pat = str_chars.into_iter()
-                .zip(pat_chars)
-                .par_bridge();
+            if ignore_pat_pad {
+                let str_pat = str_chars.into_iter()
+                    .zip(pat_chars)
+                    .par_bridge();
 
-            let mut is_matched = if ignore_pat_pad {
                 self.asciis_eq_ignore_pat_pad(str_pat)
             } else {
-                self.asciis_eq(str_pat)
-            };
+                let a: Vec<&FheAsciiChar> = str_chars.collect();
+                let b: Vec<&FheAsciiChar> = pat_chars.collect();
 
+                self.asciis_eq(a.into_iter(), b.into_iter())
+            }
+        }).collect();
+
+        for mut match_case in matched {
             // One of the possible values of pat must match the str
-            self.key.smart_bitor_assign_parallelized(&mut result, &mut is_matched);
+            self.key.smart_bitor_assign_parallelized(&mut result, &mut match_case);
         }
 
         result
@@ -85,7 +87,7 @@ impl ServerKey {
 
         let (str_iter, pat_iter, iter) = self.contains_cases(str, pat, null.as_ref());
 
-        self.compare_shifted((str_iter, pat_iter), iter, ignore_pat_pad)
+        self.compare_shifted((str_iter, pat_iter), iter.into_par_iter(), ignore_pat_pad)
     }
 
     /// Returns `true` if the given encrypted pattern matches a prefix of this
@@ -125,11 +127,10 @@ impl ServerKey {
         }
 
         if !pat.is_padded() {
-            let str_pat = str.chars().into_iter()
-                .zip(pat.chars())
-                .par_bridge();
+            let a = str.chars().iter();
+            let b = pat.chars().iter();
 
-            return self.asciis_eq(str_pat)
+            return self.asciis_eq(a, b)
         }
 
         // In the padded pattern case we can remove the last char (as it's always null)
@@ -193,6 +194,6 @@ impl ServerKey {
 
         let (str_iter, pat_iter, iter) = self.ends_with_cases(str, pat, null.as_ref());
 
-        self.compare_shifted((str_iter, pat_iter), iter, false)
+        self.compare_shifted((str_iter, pat_iter), iter.into_par_iter(), false)
     }
 }
