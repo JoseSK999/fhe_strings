@@ -4,6 +4,7 @@ mod pattern;
 mod comp;
 
 use std::cmp::Ordering;
+use rayon::prelude::*;
 use tfhe::integer::{IntegerCiphertext, RadixCiphertext, ServerKey as FheServerKey};
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::client_key::ClientKey;
@@ -67,24 +68,24 @@ pub enum FheStringIsEmpty {
 impl ServerKey {
 
     // If an iterator is longer than the other, the "excess" characters are ignored
-    fn asciis_eq<'a, I , J>(
+    fn asciis_eq<'a, I>(
         &self,
-        str_chars: I,
-        pat_chars: J,
+        str_pat: I,
     ) -> RadixCiphertext
         where
-            I: IntoIterator<Item = &'a FheAsciiChar>,
-            J: IntoIterator<Item = &'a FheAsciiChar>,
+            I: ParallelIterator<Item = (&'a FheAsciiChar, &'a FheAsciiChar)>,
     {
         let mut or = self.key.create_trivial_zero_radix(4);
 
-        for (str_char, pat_char) in str_chars.into_iter().zip(pat_chars) {
-            // This will be 0u8 if both chars are equal, non-zero otherwise
-            let mut xored = self.key.bitxor_parallelized(
+        let xors: Vec<_> = str_pat.map(|(str_char, pat_char)| {
+
+            self.key.bitxor_parallelized(
                 str_char.ciphertext(),
                 pat_char.ciphertext(),
-            );
+            )
+        }).collect();
 
+        for mut xored in xors {
             self.key.smart_bitor_assign_parallelized(&mut or, &mut xored);
         }
 
@@ -95,19 +96,17 @@ impl ServerKey {
         self.key.trim_radix_blocks_msb(&result, 3)
     }
 
-    fn asciis_eq_ignore_pat_pad<'a, I , J>(
+    fn asciis_eq_ignore_pat_pad<'a, I>(
         &self,
-        str_chars: I,
-        pat_chars: J,
+        str_pat: I,
     ) -> RadixCiphertext
         where
-            I: IntoIterator<Item = &'a FheAsciiChar>,
-            J: IntoIterator<Item = &'a FheAsciiChar>,
+            I: ParallelIterator<Item = (&'a FheAsciiChar, &'a FheAsciiChar)>,
     {
         let mut result = self.key.create_trivial_radix(1, 1);
 
-        for (str_char, pat_char) in str_chars.into_iter().zip(pat_chars) {
-            let mut are_eq = self.key.eq_parallelized(
+        let eq_or_null_pat: Vec<_> = str_pat.map(|(str_char, pat_char)| {
+            let mut eq_or_null = self.key.eq_parallelized(
                 str_char.ciphertext(),
                 pat_char.ciphertext(),
             );
@@ -116,10 +115,14 @@ impl ServerKey {
 
             // If `pat_char` is null then `are_eq` is set to true. Hence if ALL `pat_char`s are
             // null, the result is always true, which is correct since the pattern is empty
-            self.key.smart_bitor_assign_parallelized(&mut are_eq, &mut is_null);
+            self.key.smart_bitor_assign_parallelized(&mut eq_or_null, &mut is_null);
 
+            eq_or_null
+        }).collect();
+
+        for mut eq_or_null in eq_or_null_pat {
             // Will be false if `str_char` != `pat_char` and `pat_char` isn't null
-            self.key.smart_bitand_assign_parallelized(&mut result, &mut are_eq);
+            self.key.smart_bitand_assign_parallelized(&mut result, &mut eq_or_null);
         }
 
         result

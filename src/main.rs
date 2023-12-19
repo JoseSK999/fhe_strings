@@ -98,8 +98,6 @@ fn main() {
 
     let keys = Keys::new();
 
-    keys.assert_split_ascii_whitespace(str, str_pad);
-
     keys.assert_len(str, str_pad);
     keys.assert_is_empty(str, str_pad);
 
@@ -125,6 +123,7 @@ fn main() {
     keys.assert_trim_end(str, str_pad);
     keys.assert_trim_start(str, str_pad);
     keys.assert_trim(str, str_pad);
+    keys.assert_split_ascii_whitespace(str, str_pad);
 
     keys.assert_split_once(str, str_pad, pat, pat_pad);
     keys.assert_rsplit_once(str, str_pad, pat, pat_pad);

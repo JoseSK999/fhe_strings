@@ -1,3 +1,4 @@
+use rayon::prelude::ParallelBridge;
 use tfhe::integer::RadixCiphertext;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::{CharIter, FheStringIsEmpty, ServerKey};
@@ -93,7 +94,11 @@ impl ServerKey {
             CharIter::Iter(rhs.chars().iter())
         };
 
-        self.asciis_eq(lhs_chars, rhs_chars)
+        let lhs_rhs = lhs_chars.into_iter()
+            .zip(rhs_chars)
+            .par_bridge();
+
+        self.asciis_eq(lhs_rhs)
     }
 
     /// Returns `true` if two encrypted strings are not equal.

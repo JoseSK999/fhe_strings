@@ -83,7 +83,6 @@ impl SplitAsciiWhitespace {
         if padded {
             self.initial_string.set_is_padded(true);
         } else {
-            println!("str was not padded so we add a null");
             // If it was not padded now we cannot assume it's not padded (because of the left shift) so we add a null
             // to ensure it's always padded
             self.initial_string.append_null(sk);

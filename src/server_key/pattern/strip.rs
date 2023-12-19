@@ -1,3 +1,4 @@
+use rayon::iter::ParallelBridge;
 use tfhe::integer::RadixCiphertext;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::pattern::IsMatch;
@@ -12,8 +13,8 @@ impl ServerKey {
         ignore_pat_pad: bool,
     ) -> RadixCiphertext
         where I: Iterator<Item = usize>,
-              U: Iterator<Item = &'a FheAsciiChar> + Clone,
-              V: Iterator<Item = &'a FheAsciiChar> + Clone,
+              U: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
+              V: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
     {
         let mut result = self.key.create_trivial_zero_radix(1);
         let (str, pat) = str_pat;
@@ -25,10 +26,14 @@ impl ServerKey {
             let str_chars = str.clone().skip(start);
             let pat_chars = pat.clone();
 
+            let str_pat = str_chars.into_iter()
+                .zip(pat_chars)
+                .par_bridge();
+
             let mut is_matched = if ignore_pat_pad {
-                self.asciis_eq_ignore_pat_pad(str_chars, pat_chars)
+                self.asciis_eq_ignore_pat_pad(str_pat)
             } else {
-                self.asciis_eq(str_chars, pat_chars)
+                self.asciis_eq(str_pat)
             };
 
             let mut mask = self.key.extend_radix_with_trivial_zero_blocks_msb(&is_matched, 3);

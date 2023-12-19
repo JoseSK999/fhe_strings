@@ -1,3 +1,4 @@
+use rayon::prelude::ParallelBridge;
 use tfhe::integer::RadixCiphertext;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::ServerKey;
@@ -12,8 +13,8 @@ impl ServerKey {
         ignore_pat_pad: bool,
     ) -> RadixCiphertext
         where I: Iterator<Item = usize>,
-              U: Iterator<Item = &'a FheAsciiChar> + Clone,
-              V: Iterator<Item = &'a FheAsciiChar> + Clone,
+              U: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
+              V: Iterator<Item = &'a FheAsciiChar> + Clone + Send,
     {
         let mut result = self.key.create_trivial_zero_radix(1);
         let (str, pat) = str_pat;
@@ -23,10 +24,14 @@ impl ServerKey {
             let str_chars = str.clone().skip(start);
             let pat_chars = pat.clone();
 
+            let str_pat = str_chars.into_iter()
+                .zip(pat_chars)
+                .par_bridge();
+
             let mut is_matched = if ignore_pat_pad {
-                self.asciis_eq_ignore_pat_pad(str_chars, pat_chars)
+                self.asciis_eq_ignore_pat_pad(str_pat)
             } else {
-                self.asciis_eq(str_chars, pat_chars)
+                self.asciis_eq(str_pat)
             };
 
             // One of the possible values of pat must match the str
@@ -120,7 +125,11 @@ impl ServerKey {
         }
 
         if !pat.is_padded() {
-            return self.asciis_eq(str.chars(), pat.chars())
+            let str_pat = str.chars().into_iter()
+                .zip(pat.chars())
+                .par_bridge();
+
+            return self.asciis_eq(str_pat)
         }
 
         // In the padded pattern case we can remove the last char (as it's always null)
@@ -135,7 +144,11 @@ impl ServerKey {
                 CharIter::Iter(str.chars().iter())
             };
 
-        self.asciis_eq_ignore_pat_pad(str_chars, pat_chars)
+        let str_pat = str_chars.into_iter()
+            .zip(pat_chars)
+            .par_bridge();
+
+        self.asciis_eq_ignore_pat_pad(str_pat)
     }
 
     /// Returns `true` if the given encrypted pattern matches a suffix of this
