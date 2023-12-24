@@ -1,5 +1,5 @@
 use rayon::{vec::IntoIter, prelude::*};
-use tfhe::integer::RadixCiphertext;
+use tfhe::integer::{BooleanBlock, RadixCiphertext};
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::{CharIter, FheStringIsEmpty, FheStringLen, ServerKey};
 use crate::server_key::pattern::IsMatch;
@@ -13,9 +13,9 @@ impl ServerKey {
         str_pat: (CharIter, CharIter),
         par_iter: IntoIter<usize>,
         ignore_pat_pad: bool,
-    ) -> (RadixCiphertext, RadixCiphertext)
+    ) -> (RadixCiphertext, BooleanBlock)
     {
-        let mut result = self.key.create_trivial_zero_radix(1);
+        let mut result = self.key.create_trivial_boolean_block(false);
         let mut last_match_index = self.key.create_trivial_zero_radix(16);
         let (str, pat) = str_pat;
 
@@ -52,7 +52,7 @@ impl ServerKey {
                     )
                 },
                 // One of the possible values of the padded pat must match the str
-                || self.key.bitor_assign_parallelized(&mut result, &is_matched),
+                || self.key.boolean_bitor_assign(&mut result, &is_matched),
             );
         }
 
@@ -77,12 +77,12 @@ impl ServerKey {
     /// let (index, found) = sk.find(&enc_haystack, &enc_needle);
     ///
     /// let index = ck.key().decrypt_radix::<u32>(&index);
-    /// let found = ck.key().decrypt_radix::<u8>(&found) != 0;
+    /// let found = ck.key().decrypt_bool(&found);
     ///
     /// assert!(found);
     /// assert_eq!(index, 6); // "world" starts at index 6 in "hello world"
     /// ```
-    pub fn find(&self, str: &FheString, pat: &FheString) -> (RadixCiphertext, RadixCiphertext) {
+    pub fn find(&self, str: &FheString, pat: &FheString) -> (RadixCiphertext, BooleanBlock) {
 
         match self.length_checks(str, pat) {
             IsMatch::Clear(val) => {
@@ -90,7 +90,7 @@ impl ServerKey {
                 // it's false we default to 0
                 let index = self.key.create_trivial_zero_radix(16);
 
-                return (index, self.key.create_trivial_radix(val as u8, 1))
+                return (index, self.key.create_trivial_boolean_block(val))
             },
 
             // This variant is only returned in the empty string case so in any case index is 0
@@ -133,12 +133,12 @@ impl ServerKey {
     /// let (index, found) = sk.rfind(&enc_haystack, &enc_needle);
     ///
     /// let index = ck.key().decrypt_radix::<u32>(&index);
-    /// let found = ck.key().decrypt_radix::<u8>(&found) != 0;
+    /// let found = ck.key().decrypt_bool(&found);
     ///
     /// assert!(found);
     /// assert_eq!(index, 12); // The last "world" starts at index 12 in "hello world world"
     /// ```
-    pub fn rfind(&self, str: &FheString, pat: &FheString) -> (RadixCiphertext, RadixCiphertext) {
+    pub fn rfind(&self, str: &FheString, pat: &FheString) -> (RadixCiphertext, BooleanBlock) {
         let str_len = str.chars().len();
 
         match self.length_checks(str, pat) {
@@ -156,7 +156,7 @@ impl ServerKey {
                     self.key.create_trivial_zero_radix(16)
                 };
 
-                return (index, self.key.create_trivial_radix(val as u8, 1))
+                return (index, self.key.create_trivial_boolean_block(val))
             },
 
             // This variant is only returned in the empty string case so in any case index is 0

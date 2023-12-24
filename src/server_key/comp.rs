@@ -1,9 +1,9 @@
-use tfhe::integer::RadixCiphertext;
+use tfhe::integer::BooleanBlock;
 use crate::ciphertext::FheString;
 use crate::server_key::{FheStringIsEmpty, ServerKey};
 
 impl ServerKey {
-    fn eq_length_checks(&self, lhs: &FheString, rhs: &FheString) -> Option<RadixCiphertext> {
+    fn eq_length_checks(&self, lhs: &FheString, rhs: &FheString) -> Option<BooleanBlock> {
         let lhs_len = lhs.chars().len();
         let rhs_len = rhs.chars().len();
 
@@ -13,7 +13,7 @@ impl ServerKey {
             return match self.is_empty(rhs) {
                 FheStringIsEmpty::Padding(enc_val) => Some(enc_val),
                 FheStringIsEmpty::NoPadding(val) => {
-                    Some(self.key.create_trivial_radix(val as u8, 1))
+                    Some(self.key.create_trivial_boolean_block(val))
                 }
             }
         }
@@ -23,13 +23,13 @@ impl ServerKey {
         if rhs_len == 0 || (rhs.is_padded() && rhs_len == 1) {
             return match self.is_empty(lhs) {
                 FheStringIsEmpty::Padding(enc_val) => Some(enc_val),
-                _ => Some(self.key.create_trivial_zero_radix(1)),
+                _ => Some(self.key.create_trivial_boolean_block(false)),
             }
         }
 
         // Two strings without padding that have different lengths cannot be equal
         if (!lhs.is_padded() && !rhs.is_padded()) && (lhs.chars().len() != rhs.chars().len()) {
-            return Some(self.key.create_trivial_zero_radix(1));
+            return Some(self.key.create_trivial_boolean_block(false));
         }
 
         // A string without padding cannot be equal to a string with padding that has the same or
@@ -37,7 +37,7 @@ impl ServerKey {
         if (!lhs.is_padded() && rhs.is_padded()) && (rhs.chars().len() <= lhs.chars().len()) ||
             (!rhs.is_padded() && lhs.is_padded()) && (lhs.chars().len() <= rhs.chars().len())
         {
-            return Some(self.key.create_trivial_zero_radix(1));
+            return Some(self.key.create_trivial_boolean_block(false));
         }
 
         None
@@ -57,11 +57,11 @@ impl ServerKey {
     /// let enc_s2 = FheString::new(&ck, &s2, None);
     ///
     /// let result = sk.eq(&enc_s1, &enc_s2);
-    /// let are_equal = ck.key().decrypt_radix::<u8>(&result) != 0;
+    /// let are_equal = ck.key().decrypt_bool(&result);
     ///
     /// assert!(are_equal);
     /// ```
-    pub fn eq(&self, lhs: &FheString, rhs: &FheString) -> RadixCiphertext {
+    pub fn eq(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
         if let Some(val) = self.eq_length_checks(lhs, rhs) { return val }
 
         let mut lhs_uint = lhs.to_uint(self);
@@ -86,15 +86,14 @@ impl ServerKey {
     /// let enc_s2 = FheString::new(&ck, &s2, None);
     ///
     /// let result = sk.ne(&enc_s1, &enc_s2);
-    /// let are_not_equal = ck.key().decrypt_radix::<u8>(&result) != 0;
+    /// let are_not_equal = ck.key().decrypt_bool(&result);
     ///
     /// assert!(are_not_equal);
     /// ```
-    pub fn ne(&self, lhs: &FheString, rhs: &FheString) -> RadixCiphertext {
+    pub fn ne(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
         let eq = self.eq(lhs, rhs);
 
-        // 01 XOR 01 = 00, 00 XOR 01 = 01
-        self.key.scalar_bitxor_parallelized(&eq, 1u8)
+        self.key.boolean_bitnot(&eq)
     }
 
     /// Returns `true` if the first encrypted string is less than the second encrypted string.
@@ -111,11 +110,11 @@ impl ServerKey {
     /// let enc_s2 = FheString::new(&ck, &s2, None);
     ///
     /// let result = sk.lt(&enc_s1, &enc_s2);
-    /// let is_lt = ck.key().decrypt_radix::<u8>(&result) != 0;
+    /// let is_lt = ck.key().decrypt_bool(&result);
     ///
     /// assert!(is_lt); // "apple" is less than "banana"
     /// ```
-    pub fn lt(&self, lhs: &FheString, rhs: &FheString) -> RadixCiphertext {
+    pub fn lt(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
         let mut lhs_uint = lhs.to_uint(self);
         let mut rhs_uint = rhs.to_uint(self);
 
@@ -138,11 +137,11 @@ impl ServerKey {
     /// let enc_s2 = FheString::new(&ck, &s2, None);
     ///
     /// let result = sk.gt(&enc_s1, &enc_s2);
-    /// let is_gt = ck.key().decrypt_radix::<u8>(&result) != 0;
+    /// let is_gt = ck.key().decrypt_bool(&result);
     ///
     /// assert!(is_gt); // "banana" is greater than "apple"
     /// ```
-    pub fn gt(&self, lhs: &FheString, rhs: &FheString) -> RadixCiphertext {
+    pub fn gt(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
         let mut lhs_uint = lhs.to_uint(self);
         let mut rhs_uint = rhs.to_uint(self);
 
@@ -165,11 +164,11 @@ impl ServerKey {
     /// let enc_s2 = FheString::new(&ck, &s2, None);
     ///
     /// let result = sk.le(&enc_s1, &enc_s2);
-    /// let is_le = ck.key().decrypt_radix::<u8>(&result) != 0;
+    /// let is_le = ck.key().decrypt_bool(&result);
     ///
     /// assert!(is_le); // "apple" is less than or equal to "banana"
     /// ```
-    pub fn le(&self, lhs: &FheString, rhs: &FheString) -> RadixCiphertext {
+    pub fn le(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
         let mut lhs_uint = lhs.to_uint(self);
         let mut rhs_uint = rhs.to_uint(self);
 
@@ -192,11 +191,11 @@ impl ServerKey {
     /// let enc_s2 = FheString::new(&ck, &s2, None);
     ///
     /// let result = sk.ge(&enc_s1, &enc_s2);
-    /// let is_ge = ck.key().decrypt_radix::<u8>(&result) != 0;
+    /// let is_ge = ck.key().decrypt_bool(&result);
     ///
     /// assert!(is_ge); // "banana" is greater than or equal to "apple"
     /// ```
-    pub fn ge(&self, lhs: &FheString, rhs: &FheString) -> RadixCiphertext {
+    pub fn ge(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
         let mut lhs_uint = lhs.to_uint(self);
         let mut rhs_uint = rhs.to_uint(self);
 

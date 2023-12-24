@@ -5,7 +5,7 @@ mod split;
 mod replace;
 
 use std::ops::Range;
-use tfhe::integer::RadixCiphertext;
+use tfhe::integer::BooleanBlock;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::{CharIter, FheStringIsEmpty, ServerKey};
 
@@ -13,7 +13,7 @@ use crate::server_key::{CharIter, FheStringIsEmpty, ServerKey};
 // the lengths
 enum IsMatch {
     Clear(bool),
-    Cipher(RadixCiphertext),
+    Cipher(BooleanBlock),
     None,
 }
 

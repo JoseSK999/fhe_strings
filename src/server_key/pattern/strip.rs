@@ -1,6 +1,6 @@
 use std::ops::Range;
 use rayon::prelude::*;
-use tfhe::integer::RadixCiphertext;
+use tfhe::integer::BooleanBlock;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::pattern::IsMatch;
 use crate::server_key::{CharIter, FheStringLen, ServerKey};
@@ -12,9 +12,9 @@ impl ServerKey {
         str_pat: (CharIter, CharIter),
         iter: Range<usize>,
         ignore_pat_pad: bool,
-    ) -> RadixCiphertext
+    ) -> BooleanBlock
     {
-        let mut result = self.key.create_trivial_zero_radix(1);
+        let mut result = self.key.create_trivial_boolean_block(false);
         let (str, pat) = str_pat;
 
         let pat_len = pat.clone().count();
@@ -24,7 +24,7 @@ impl ServerKey {
             let str_chars = str.clone().skip(start);
             let pat_chars = pat.clone();
 
-            let mut is_matched = if ignore_pat_pad {
+            let is_matched = if ignore_pat_pad {
                 let str_pat = str_chars.into_iter()
                     .zip(pat_chars)
                     .par_bridge();
@@ -37,7 +37,7 @@ impl ServerKey {
                 self.asciis_eq(a.into_iter(), b.into_iter())
             };
 
-            let mut mask = self.key.extend_radix_with_trivial_zero_blocks_msb(&is_matched, 3);
+            let mut mask = is_matched.clone().into_radix(4, &self.key);
 
             // If mask == 0u8, it will now be 255u8. If it was 1u8, it will now be 0u8
             self.key.scalar_sub_assign_parallelized(&mut mask, 1);
@@ -56,7 +56,7 @@ impl ServerKey {
                     });
                 },
                 // One of the possible values of pat must match the str
-                || self.key.smart_bitor_assign_parallelized(&mut result, &mut is_matched),
+                || self.key.boolean_bitor_assign(&mut result, &is_matched),
             );
         }
 
@@ -83,11 +83,11 @@ impl ServerKey {
     ///
     /// let (result, found) = sk.strip_prefix(&enc_s, &enc_prefix);
     /// let stripped = ck.decrypt_ascii(&result);
-    /// let found = ck.key().decrypt_radix::<u8>(&found) != 0;
+    /// let found = ck.key().decrypt_bool(&found);
     ///
     /// let (result_no_match, not_found) = sk.strip_prefix(&enc_s, &enc_no_match_prefix);
     /// let not_stripped = ck.decrypt_ascii(&result_no_match);
-    /// let not_found = ck.key().decrypt_radix::<u8>(&not_found) != 0;
+    /// let not_found = ck.key().decrypt_bool(&not_found);
     ///
     /// assert!(found);
     /// assert_eq!(stripped, " world"); // "hello" is stripped from "hello world"
@@ -95,13 +95,13 @@ impl ServerKey {
     /// assert!(!not_found);
     /// assert_eq!(not_stripped, "hello world"); // No match, original string returned
     /// ```
-    pub fn strip_prefix(&self, str: &FheString, pat: &FheString) -> (FheString, RadixCiphertext) {
+    pub fn strip_prefix(&self, str: &FheString, pat: &FheString) -> (FheString, BooleanBlock) {
         let mut result = str.clone();
 
         match self.length_checks(str, pat) {
             // If IsMatch is Clear we return the same string (a true means the pattern is empty)
             IsMatch::Clear(bool) => {
-                return (result, self.key.create_trivial_radix(bool as u8, 1))
+                return (result, self.key.create_trivial_boolean_block(bool))
             },
             // If IsMatch is Cipher it means str is empty so in any case we return the same string
             IsMatch::Cipher(val) => {
@@ -163,11 +163,11 @@ impl ServerKey {
     ///
     /// let (result, found) = sk.strip_suffix(&enc_s, &enc_suffix);
     /// let stripped = ck.decrypt_ascii(&result);
-    /// let found = ck.key().decrypt_radix::<u8>(&found) != 0;
+    /// let found = ck.key().decrypt_bool(&found);
     ///
     /// let (result_no_match, not_found) = sk.strip_suffix(&enc_s, &enc_no_match_suffix);
     /// let not_stripped = ck.decrypt_ascii(&result_no_match);
-    /// let not_found = ck.key().decrypt_radix::<u8>(&not_found) != 0;
+    /// let not_found = ck.key().decrypt_bool(&not_found);
     ///
     /// assert!(found);
     /// assert_eq!(stripped, "hello "); // "world" is stripped from "hello world"
@@ -175,13 +175,13 @@ impl ServerKey {
     /// assert!(!not_found);
     /// assert_eq!(not_stripped, "hello world"); // No match, original string returned
     /// ```
-    pub fn strip_suffix(&self, str: &FheString, pat: &FheString) -> (FheString, RadixCiphertext) {
+    pub fn strip_suffix(&self, str: &FheString, pat: &FheString) -> (FheString, BooleanBlock) {
         let mut result = str.clone();
 
         match self.length_checks(str, pat) {
             // If IsMatch is Clear we return the same string (a true means the pattern is empty)
             IsMatch::Clear(bool) => {
-                return (result, self.key.create_trivial_radix(bool as u8, 1))
+                return (result, self.key.create_trivial_boolean_block(bool))
             },
             // If IsMatch is Cipher it means str is empty so in any case we return the same string
             IsMatch::Cipher(val) => {

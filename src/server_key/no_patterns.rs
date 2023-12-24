@@ -1,5 +1,5 @@
 use rayon::prelude::*;
-use tfhe::integer::RadixCiphertext;
+use tfhe::integer::BooleanBlock;
 use crate::ciphertext::{FheString, UIntArg};
 use crate::server_key::{FheStringIsEmpty, FheStringLen, ServerKey};
 
@@ -54,7 +54,9 @@ impl ServerKey {
 
             // If we add the number of non zero elements we get the actual length, without padding
             for char in non_zero_chars {
-                self.key.add_assign_parallelized(&mut len, &char);
+                let zero_or_one = char.into_radix(1, &self.key);
+
+                self.key.add_assign_parallelized(&mut len, &zero_or_one);
             }
 
             FheStringLen::Padding(len)
@@ -93,7 +95,7 @@ impl ServerKey {
     ///     FheStringIsEmpty::NoPadding(_) => panic!("Unexpected no padding"),
     ///     FheStringIsEmpty::Padding(ciphertext) => {
     ///         // Homomorphically computed emptiness, requires decryption for actual value
-    ///         let is_empty = ck.key().decrypt_radix::<u8>(&ciphertext) != 0;
+    ///         let is_empty = ck.key().decrypt_bool(&ciphertext);
     ///         assert!(is_empty)
     ///     }
     /// }
@@ -103,7 +105,7 @@ impl ServerKey {
         if str.is_padded() {
             if str.chars().len() == 1 {
                 return FheStringIsEmpty::Padding(
-                    self.key.create_trivial_radix(1, 1)
+                    self.key.create_trivial_boolean_block(true)
                 );
             }
 
@@ -119,10 +121,7 @@ impl ServerKey {
 
             let result = self.key.scalar_eq_parallelized(&should_be_zero, 0u8);
 
-            FheStringIsEmpty::Padding(
-                // Return just the block containing the boolean value
-                self.key.trim_radix_blocks_msb(&result, 3)
-            )
+            FheStringIsEmpty::Padding(result)
 
         } else {
 
@@ -158,7 +157,7 @@ impl ServerKey {
                     || self.key.scalar_le_parallelized(char.ciphertext(), 122u8),
                 );
 
-                self.key.bitand_parallelized(&ge_97, &le_122)
+                self.key.boolean_bitand(&ge_97, &le_122)
             }).collect();
 
         // Subtraction by 32 makes the character uppercase
@@ -169,7 +168,11 @@ impl ServerKey {
             .for_each(|(char, is_lowercase)| {
                 let mut subtract = self.key.create_trivial_radix(32, 4);
 
-                self.key.mul_assign_parallelized(&mut subtract, &is_lowercase);
+                self.key.mul_assign_parallelized(
+                    &mut subtract,
+                    // TODO check this 4, could be replaced with 1
+                    &is_lowercase.into_radix(4, &self.key),
+                );
 
                 self.key.sub_assign_parallelized(char.ciphertext_mut(), &subtract);
             });
@@ -205,7 +208,7 @@ impl ServerKey {
                     || self.key.scalar_le_parallelized(char.ciphertext(), 90u8),
                 );
 
-                self.key.bitand_parallelized(&ge_65, &le_90)
+                self.key.boolean_bitand(&ge_65, &le_90)
             }).collect();
 
         // Addition by 32 makes the character lowercase
@@ -216,7 +219,11 @@ impl ServerKey {
             .for_each(|(char, is_uppercase)| {
                 let mut add = self.key.create_trivial_radix(32, 4);
 
-                self.key.mul_assign_parallelized(&mut add, &is_uppercase);
+                self.key.mul_assign_parallelized(
+                    &mut add,
+                    // TODO check this 4, could be replaced with 1
+                    &is_uppercase.into_radix(4, &self.key),
+                );
 
                 self.key.add_assign_parallelized(char.ciphertext_mut(), &add);
             });
@@ -238,11 +245,11 @@ impl ServerKey {
     /// let enc_s2 = FheString::new(&ck, &s2, None);
     ///
     /// let result = sk.eq_ignore_case(&enc_s1, &enc_s2);
-    /// let are_equal = ck.key().decrypt_radix::<u8>(&result) != 0;
+    /// let are_equal = ck.key().decrypt_bool(&result);
     ///
     /// assert!(are_equal);
     /// ```
-    pub fn eq_ignore_case(&self, lhs: &FheString, rhs: &FheString) -> RadixCiphertext {
+    pub fn eq_ignore_case(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
         let (lhs, rhs) = rayon::join(
             || self.to_lowercase(lhs),
             || self.to_lowercase(rhs),

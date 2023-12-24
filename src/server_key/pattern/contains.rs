@@ -1,6 +1,6 @@
 use rayon::prelude::*;
 use rayon::range::Iter;
-use tfhe::integer::RadixCiphertext;
+use tfhe::integer::BooleanBlock;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::ServerKey;
 use crate::server_key::pattern::{CharIter, IsMatch};
@@ -12,9 +12,9 @@ impl ServerKey {
         str_pat: (CharIter, CharIter),
         par_iter: Iter<usize>,
         ignore_pat_pad: bool,
-    ) -> RadixCiphertext
+    ) -> BooleanBlock
     {
-        let mut result = self.key.create_trivial_zero_radix(1);
+        let mut result = self.key.create_trivial_boolean_block(false);
         let (str, pat) = str_pat;
 
         let matched: Vec<_> = par_iter.map(|start| {
@@ -35,9 +35,9 @@ impl ServerKey {
             }
         }).collect();
 
-        for mut match_case in matched {
+        for match_case in matched {
             // One of the possible values of pat must match the str
-            self.key.smart_bitor_assign_parallelized(&mut result, &mut match_case);
+            self.key.boolean_bitor_assign(&mut result, &match_case);
         }
 
         result
@@ -61,17 +61,17 @@ impl ServerKey {
     /// let result1 = sk.contains(&enc_bananas, &enc_nana);
     /// let result2 = sk.contains(&enc_bananas, &enc_apples);
     ///
-    /// let should_be_true = ck.key().decrypt_radix::<u8>(&result1) != 0;
-    /// let should_be_false = ck.key().decrypt_radix::<u8>(&result2) != 0;
+    /// let should_be_true = ck.key().decrypt_bool(&result1);
+    /// let should_be_false = ck.key().decrypt_bool(&result2);
     ///
     /// assert!(should_be_true);
     /// assert!(!should_be_false);
     /// ```
-    pub fn contains(&self, str: &FheString, pat: &FheString) -> RadixCiphertext {
+    pub fn contains(&self, str: &FheString, pat: &FheString) -> BooleanBlock {
 
         match self.length_checks(str, pat) {
             IsMatch::Clear(val) => {
-                return self.key.create_trivial_radix(val as u8, 1);
+                return self.key.create_trivial_boolean_block(val);
             },
             IsMatch::Cipher(val) => return val,
             _ => (),
@@ -108,19 +108,19 @@ impl ServerKey {
     /// let result1 = sk.starts_with(&enc_bananas, &enc_ba);
     /// let result2 = sk.starts_with(&enc_bananas, &enc_nan);
     ///
-    /// let should_be_true = ck.key().decrypt_radix::<u8>(&result1) != 0;
-    /// let should_be_false = ck.key().decrypt_radix::<u8>(&result2) != 0;
+    /// let should_be_true = ck.key().decrypt_bool(&result1);
+    /// let should_be_false = ck.key().decrypt_bool(&result2);
     ///
     /// assert!(should_be_true);
     /// assert!(!should_be_false);
     /// ```
-    pub fn starts_with(&self, str: &FheString, pat: &FheString) -> RadixCiphertext {
+    pub fn starts_with(&self, str: &FheString, pat: &FheString) -> BooleanBlock {
         let pat_len = pat.chars().len();
         let str_len = str.chars().len();
 
         match self.length_checks(str, pat) {
             IsMatch::Clear(val) => {
-                return self.key.create_trivial_radix(val as u8, 1);
+                return self.key.create_trivial_boolean_block(val);
             },
             IsMatch::Cipher(val) => return val,
             _ => (),
@@ -170,17 +170,17 @@ impl ServerKey {
     /// let result1 = sk.ends_with(&enc_bananas, &enc_anas);
     /// let result2 = sk.ends_with(&enc_bananas, &enc_nana);
     ///
-    /// let should_be_true = ck.key().decrypt_radix::<u8>(&result1) != 0;
-    /// let should_be_false = ck.key().decrypt_radix::<u8>(&result2) != 0;
+    /// let should_be_true = ck.key().decrypt_bool(&result1);
+    /// let should_be_false = ck.key().decrypt_bool(&result2);
     ///
     /// assert!(should_be_true);
     /// assert!(!should_be_false);
     /// ```
-    pub fn ends_with(&self, str: &FheString, pat: &FheString) -> RadixCiphertext {
+    pub fn ends_with(&self, str: &FheString, pat: &FheString) -> BooleanBlock {
 
         match self.length_checks(str, pat) {
             IsMatch::Clear(val) => {
-                return self.key.create_trivial_radix(val as u8, 1);
+                return self.key.create_trivial_boolean_block(val);
             },
             IsMatch::Cipher(val) => return val,
             _ => (),

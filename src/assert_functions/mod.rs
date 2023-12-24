@@ -43,7 +43,7 @@ impl Keys {
 
         let dec = match result {
             FheStringIsEmpty::NoPadding(clear_len) => clear_len,
-            FheStringIsEmpty::Padding(enc_len) => self.ck.key().decrypt_radix::<u8>(&enc_len) != 0,
+            FheStringIsEmpty::Padding(enc_len) => self.ck.key().decrypt_bool(&enc_len),
         };
 
         println!(
@@ -70,7 +70,7 @@ impl Keys {
         let result = self.sk.contains(&enc_str, &enc_pat);
         let end = Instant::now();
 
-        let dec = self.ck.key().decrypt_radix::<u8>(&result) != 0;
+        let dec = self.ck.key().decrypt_bool(&result);
 
         println!(
             "\n\x1b[1;37;1mContains:\x1b[0m\n\
@@ -97,7 +97,7 @@ impl Keys {
         let result = self.sk.ends_with(&enc_str, &enc_pat);
         let end = Instant::now();
 
-        let dec = self.ck.key().decrypt_radix::<u8>(&result) != 0;
+        let dec = self.ck.key().decrypt_bool(&result);
 
         println!(
             "\n\x1b[1;37;1mEnds_with:\x1b[0m\n\
@@ -124,7 +124,7 @@ impl Keys {
         let result = self.sk.starts_with(&enc_str, &enc_pat);
         let end = Instant::now();
 
-        let dec = self.ck.key().decrypt_radix::<u8>(&result) != 0;
+        let dec = self.ck.key().decrypt_bool(&result);
 
         println!(
             "\n\x1b[1;37;1mStarts_with:\x1b[0m\n\
@@ -152,7 +152,7 @@ impl Keys {
         let end = Instant::now();
 
         let dec_index = self.ck.key().decrypt_radix::<u32>(&index);
-        let dec_is_some = self.ck.key().decrypt_radix::<u8>(&is_some) != 0;
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
         let dec = if dec_is_some { Some(dec_index as usize) } else { None };
 
@@ -182,7 +182,7 @@ impl Keys {
         let end = Instant::now();
 
         let dec_index = self.ck.key().decrypt_radix::<u32>(&index);
-        let dec_is_some = self.ck.key().decrypt_radix::<u8>(&is_some) != 0;
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
         let dec = if dec_is_some { Some(dec_index as usize) } else { None };
 
@@ -212,7 +212,7 @@ impl Keys {
         let end = Instant::now();
 
         let dec_result = self.ck.decrypt_ascii(&result);
-        let dec_is_some = self.ck.key().decrypt_radix::<u8>(&is_some) != 0;
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
         let dec = if dec_is_some { Some(dec_result.as_str()) } else { None };
 
@@ -242,7 +242,7 @@ impl Keys {
         let end = Instant::now();
 
         let dec_result = self.ck.decrypt_ascii(&result);
-        let dec_is_some = self.ck.key().decrypt_radix::<u8>(&is_some) != 0;
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
         let dec = if dec_is_some { Some(dec_result.as_str()) } else { None };
 
@@ -271,7 +271,7 @@ impl Keys {
         let result = self.sk.eq_ignore_case(&enc_lhs, &enc_rhs);
         let end = Instant::now();
 
-        let dec = self.ck.key().decrypt_radix::<u8>(&result) != 0;
+        let dec = self.ck.key().decrypt_bool(&result);
 
         println!(
             "\n\x1b[1;37;1mEq_ignore_case:\x1b[0m\n\
@@ -299,7 +299,7 @@ impl Keys {
         let result_eq = self.sk.eq(&enc_lhs, &enc_rhs);
         let end = Instant::now();
 
-        let dec_eq = self.ck.key().decrypt_radix::<u8>(&result_eq) != 0;
+        let dec_eq = self.ck.key().decrypt_bool(&result_eq);
 
         println!(
             "\n\x1b[1;37;1mEq:\x1b[0m\n\
@@ -321,7 +321,7 @@ impl Keys {
         let result_ne = self.sk.ne(&enc_lhs, &enc_rhs);
         let end = Instant::now();
 
-        let dec_ne = self.ck.key().decrypt_radix::<u8>(&result_ne) != 0;
+        let dec_ne = self.ck.key().decrypt_bool(&result_ne);
 
         println!(
             "\n\x1b[1;37;1mNe:\x1b[0m\n\
@@ -343,7 +343,7 @@ impl Keys {
         let result_ge = self.sk.ge(&enc_lhs, &enc_rhs);
         let end = Instant::now();
 
-        let dec_ge = self.ck.key().decrypt_radix::<u8>(&result_ge) != 0;
+        let dec_ge = self.ck.key().decrypt_bool(&result_ge);
 
         println!(
             "\n\x1b[1;37;1mGe:\x1b[0m\n\
@@ -365,7 +365,7 @@ impl Keys {
         let result_le = self.sk.le(&enc_lhs, &enc_rhs);
         let end = Instant::now();
 
-        let dec_le = self.ck.key().decrypt_radix::<u8>(&result_le) != 0;
+        let dec_le = self.ck.key().decrypt_bool(&result_le);
 
         println!(
             "\n\x1b[1;37;1mLe:\x1b[0m\n\
@@ -387,7 +387,7 @@ impl Keys {
         let result_gt = self.sk.gt(&enc_lhs, &enc_rhs);
         let end = Instant::now();
 
-        let dec_gt = self.ck.key().decrypt_radix::<u8>(&result_gt) != 0;
+        let dec_gt = self.ck.key().decrypt_bool(&result_gt);
 
         println!(
             "\n\x1b[1;37;1mGt:\x1b[0m\n\
@@ -409,7 +409,7 @@ impl Keys {
         let result_lt = self.sk.lt(&enc_lhs, &enc_rhs);
         let end = Instant::now();
 
-        let dec_lt = self.ck.key().decrypt_radix::<u8>(&result_lt) != 0;
+        let dec_lt = self.ck.key().decrypt_bool(&result_lt);
 
         println!(
             "\n\x1b[1;37;1mLt:\x1b[0m\n\
@@ -682,7 +682,7 @@ impl Keys {
 
         let dec_lhs = self.ck.decrypt_ascii(&lhs);
         let dec_rhs = self.ck.decrypt_ascii(&rhs);
-        let dec_is_some = self.ck.key().decrypt_radix::<u8>(&is_some) != 0;
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
         let dec = if dec_is_some { Some((dec_lhs.as_str(), dec_rhs.as_str())) } else { None };
 
@@ -713,7 +713,7 @@ impl Keys {
 
         let dec_lhs = self.ck.decrypt_ascii(&lhs);
         let dec_rhs = self.ck.decrypt_ascii(&rhs);
-        let dec_is_some = self.ck.key().decrypt_radix::<u8>(&is_some) != 0;
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
         let dec = if dec_is_some { Some((dec_lhs.as_str(), dec_rhs.as_str())) } else { None };
 
@@ -752,7 +752,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some {
                 Some(self.ck.decrypt_ascii(result))
@@ -800,7 +800,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some {
                 Some(self.ck.decrypt_ascii(result))
@@ -848,7 +848,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some {
                 Some(self.ck.decrypt_ascii(result))
@@ -896,7 +896,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some {
                 Some(self.ck.decrypt_ascii(result))
@@ -944,7 +944,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some {
                 Some(self.ck.decrypt_ascii(result))
@@ -992,7 +992,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some { Some(self.ck.decrypt_ascii(result))
             } else {
@@ -1032,7 +1032,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some {
                 Some(self.ck.decrypt_ascii(result))
@@ -1079,7 +1079,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some { Some(self.ck.decrypt_ascii(result))
             } else {
@@ -1119,7 +1119,7 @@ impl Keys {
 
         // Collect the decrypted results properly
         let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_radix::<u8>(is_some) != 0;
+            let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
             if dec_is_some {
                 Some(self.ck.decrypt_ascii(result))

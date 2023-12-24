@@ -107,7 +107,7 @@ impl ServerKey {
         let (from_is_empty, real_str_len) = rayon::join(
             || match self.is_empty(from) {
                 FheStringIsEmpty::Padding(enc) => enc,
-                FheStringIsEmpty::NoPadding(clear) => self.key.create_trivial_radix(clear as u32, 1),
+                FheStringIsEmpty::NoPadding(clear) => self.key.create_trivial_boolean_block(clear),
             },
             || match self.len(result) {
                 FheStringLen::Padding(enc_val) => enc_val,
@@ -132,14 +132,14 @@ impl ServerKey {
                         || {
                             let no_more_matches = self.key.scalar_lt_parallelized(&real_str_len, i);
 
-                            self.key.bitand_parallelized(&no_more_matches, &from_is_empty)
+                            self.key.boolean_bitand(&no_more_matches, &from_is_empty)
                         },
 
                         || enc_n.map(|n| self.key.scalar_le_parallelized(n, i)),
                     );
 
                     if let Some(exceeded) = enc_n_is_exceeded {
-                        self.key.bitor_assign_parallelized(&mut no_more_matches, &exceeded);
+                        self.key.boolean_bitor_assign(&mut no_more_matches, &exceeded);
                     }
 
                     *result = self.conditional_string(&no_more_matches, prev, result)
@@ -147,7 +147,10 @@ impl ServerKey {
 
                 // If we replace "" to "a" in the "ww" str, we get "awawa". So when `from_is_empty`
                 // we need to move to the next space between letters by adding 1 to the skip value
-                || self.key.add_assign_parallelized(&mut skip, &from_is_empty),
+                || self.key.add_assign_parallelized(
+                    &mut skip,
+                    &from_is_empty.clone().into_radix(1, &self.key),
+                ),
             );
         }
     }
@@ -244,7 +247,7 @@ impl ServerKey {
 
                 if let UIntArg::Enc(enc_n) = count {
                     let n_not_zero = self.key.scalar_ne_parallelized(enc_n.cipher(), 0);
-                    let and_val = self.key.bitand_parallelized(&n_not_zero, &val);
+                    let and_val = self.key.boolean_bitand(&n_not_zero, &val);
 
                     let mut re = self.conditional_string(&and_val, to.clone(), str);
 

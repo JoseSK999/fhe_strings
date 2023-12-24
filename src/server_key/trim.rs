@@ -1,5 +1,5 @@
 use rayon::prelude::*;
-use tfhe::integer::{IntegerCiphertext, RadixCiphertext};
+use tfhe::integer::BooleanBlock;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::{FheStringLen, ServerKey};
 
@@ -28,15 +28,13 @@ impl SplitAsciiWhitespace {
         let mut mask = self.initial_string.clone();
         let mut result = self.initial_string.clone();
 
-        let mut prev_was_not = sk.key.create_trivial_radix(1, 1);
+        let mut prev_was_not = sk.key.create_trivial_boolean_block(true);
         for char in mask.chars_mut().iter_mut() {
 
             let mut is_not_ws = sk.is_not_whitespace(char);
-            sk.key.bitand_assign_parallelized(&mut is_not_ws, &prev_was_not);
+            sk.key.boolean_bitand_assign(&mut is_not_ws, &prev_was_not);
 
-            let mut mask_u8 = sk.key.extend_radix_with_trivial_zero_blocks_msb(&is_not_ws, 3);
-
-            assert_eq!(mask_u8.blocks().len(), 4);
+            let mut mask_u8 = is_not_ws.clone().into_radix(4, &sk.key);
 
             // 0u8 is kept the same, but 1u8 is transformed into 255u8
             sk.key.scalar_sub_assign_parallelized(&mut mask_u8, 1);
@@ -73,7 +71,10 @@ impl SplitAsciiWhitespace {
         for mask_u8 in mask.chars() {
 
             let is_true = sk.key.scalar_eq_parallelized(mask_u8.ciphertext(), 255u8);
-            sk.key.add_assign_parallelized(&mut number_of_trues, &is_true);
+            sk.key.add_assign_parallelized(
+                &mut number_of_trues,
+                &is_true.into_radix(1, &sk.key),
+            );
         }
 
         let padded = self.initial_string.is_padded();
@@ -92,7 +93,7 @@ impl SplitAsciiWhitespace {
 
 impl ServerKey {
     // As specified in https://doc.rust-lang.org/core/primitive.char.html#method.is_ascii_whitespace
-    fn is_whitespace(&self, char: &FheAsciiChar, or_null: bool) -> RadixCiphertext {
+    fn is_whitespace(&self, char: &FheAsciiChar, or_null: bool) -> BooleanBlock {
 
         let (((is_space, is_tab), (is_new_line, is_form_feed)), is_carriage_return) = rayon::join(
             || rayon::join(
@@ -108,39 +109,35 @@ impl ServerKey {
             || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Du8),
         );
 
-        let mut is_whitespace = self.key.bitor_parallelized(&is_space, &is_tab);
-        self.key.bitor_assign_parallelized(&mut is_whitespace, &is_new_line);
-        self.key.bitor_assign_parallelized(&mut is_whitespace, &is_form_feed);
-        self.key.bitor_assign_parallelized(&mut is_whitespace, &is_carriage_return);
+        let mut is_whitespace = self.key.boolean_bitor(&is_space, &is_tab);
+        self.key.boolean_bitor_assign(&mut is_whitespace, &is_new_line);
+        self.key.boolean_bitor_assign(&mut is_whitespace, &is_form_feed);
+        self.key.boolean_bitor_assign(&mut is_whitespace, &is_carriage_return);
 
         if or_null {
             let is_null = self.key.scalar_eq_parallelized(char.ciphertext(), 0u8);
 
-            self.key.bitor_assign_parallelized(&mut is_whitespace, &is_null);
+            self.key.boolean_bitor_assign(&mut is_whitespace, &is_null);
         }
 
-        assert_eq!(is_whitespace.blocks().len(), 4);
-
-        // Return just the block containing the boolean value
-        self.key.trim_radix_blocks_msb(&is_whitespace, 3)
+        is_whitespace
     }
 
-    fn is_not_whitespace(&self, char: &FheAsciiChar) -> RadixCiphertext {
+    fn is_not_whitespace(&self, char: &FheAsciiChar) -> BooleanBlock {
         let result = self.is_whitespace(char, false);
 
-        // 01 XOR 01 = 00, 00 XOR 01 = 01
-        self.key.scalar_bitxor_parallelized(&result, 1u8)
+        self.key.boolean_bitnot(&result)
     }
 
     fn compare_and_trim<'a, I>(&self, strip_str: I, starts_with_null: bool)
         where I: Iterator<Item = &'a mut FheAsciiChar>
     {
 
-        let mut prev_was_ws = self.key.create_trivial_radix(1, 1);
+        let mut prev_was_ws = self.key.create_trivial_boolean_block(true);
         for char in strip_str {
 
             let mut is_whitespace = self.is_whitespace(char, starts_with_null);
-            self.key.bitand_assign_parallelized(&mut is_whitespace, &prev_was_ws);
+            self.key.boolean_bitand_assign(&mut is_whitespace, &prev_was_ws);
 
             *char.ciphertext_mut() = self.key.if_then_else_parallelized(
                 &is_whitespace,

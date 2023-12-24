@@ -1,6 +1,6 @@
 mod split_iters;
 
-use tfhe::integer::RadixCiphertext;
+use tfhe::integer::{BooleanBlock, RadixCiphertext};
 use crate::ciphertext::{FheString, UIntArg};
 use crate::server_key::{FheStringIsEmpty, FheStringIterator, FheStringLen, ServerKey};
 use crate::server_key::pattern::IsMatch;
@@ -59,15 +59,15 @@ impl ServerKey {
         (lhs, rhs)
     }
 
-    pub fn rsplit_once(&self, str: &FheString, pat: &FheString) -> (FheString, FheString, RadixCiphertext) {
+    pub fn rsplit_once(&self, str: &FheString, pat: &FheString) -> (FheString, FheString, BooleanBlock) {
         match self.length_checks(str, pat) {
             IsMatch::Clear(val) => {
                 return if val {
                     // `val` is set only when the pattern is empty, so the last match is at the end
-                    (str.clone(), FheString::empty(), self.key.create_trivial_radix(1, 1))
+                    (str.clone(), FheString::empty(), self.key.create_trivial_boolean_block(true))
                 } else {
                     // There's no match so we default to empty string and str
-                    (FheString::empty(), str.clone(), self.key.create_trivial_radix(0, 1))
+                    (FheString::empty(), str.clone(), self.key.create_trivial_boolean_block(false))
                 }
             }
             // This is only returned when str is empty so both sub-strings are empty as well
@@ -84,15 +84,15 @@ impl ServerKey {
         (lhs, rhs, is_match)
     }
 
-    pub fn split_once(&self, str: &FheString, pat: &FheString) -> (FheString, FheString, RadixCiphertext) {
+    pub fn split_once(&self, str: &FheString, pat: &FheString) -> (FheString, FheString, BooleanBlock) {
         match self.length_checks(str, pat) {
             IsMatch::Clear(val) => {
                 return if val {
                     // `val` is set only when the pattern is empty, so the first match is index 0
-                    (FheString::empty(), str.clone(), self.key.create_trivial_radix(1, 1))
+                    (FheString::empty(), str.clone(), self.key.create_trivial_boolean_block(true))
                 } else {
                     // There's no match so we default to empty string and str
-                    (FheString::empty(), str.clone(), self.key.create_trivial_radix(0, 1))
+                    (FheString::empty(), str.clone(), self.key.create_trivial_boolean_block(false))
                 }
             }
             // This is only returned when str is empty so both sub-strings are empty as well
@@ -123,10 +123,10 @@ impl ServerKey {
             split_type,
             state: str.clone(),
             pat: pat.clone(),
-            prev_was_some: self.key.create_trivial_radix(1, 1),
+            prev_was_some: self.key.create_trivial_boolean_block(true),
             counter: 0,
             max_counter,
-            counter_lt_max: self.key.create_trivial_radix(1, 1),
+            counter_lt_max: self.key.create_trivial_boolean_block(true),
         }
     }
 
@@ -136,9 +136,9 @@ impl ServerKey {
         let uint_not_0 = match &n {
             UIntArg::Clear(val) => {
                 if *val != 0 {
-                    self.key.create_trivial_radix(1, 1)
+                    self.key.create_trivial_boolean_block(true)
                 } else {
-                    self.key.create_trivial_zero_radix(1)
+                    self.key.create_trivial_boolean_block(false)
                 }
             }
             UIntArg::Enc(enc) => {
@@ -170,10 +170,10 @@ impl ServerKey {
             split_type,
             state: str.clone(),
             pat: pat.clone(),
-            prev_was_some: self.key.create_trivial_radix(1, 1),
+            prev_was_some: self.key.create_trivial_boolean_block(true),
             counter: 0,
             max_counter,
-            counter_lt_max: self.key.create_trivial_radix(1, 1),
+            counter_lt_max: self.key.create_trivial_boolean_block(true),
         };
 
         SplitNoTrailing { internal }
@@ -186,7 +186,7 @@ impl ServerKey {
 
         let leading_empty_str = match self.is_empty(&prev_return.0) {
             FheStringIsEmpty::Padding(enc) => enc,
-            FheStringIsEmpty::NoPadding(clear) => self.key.create_trivial_radix(clear as u32, 1),
+            FheStringIsEmpty::NoPadding(clear) => self.key.create_trivial_boolean_block(clear),
         };
 
         SplitNoLeading {
@@ -207,17 +207,17 @@ struct SplitInternal {
     split_type: SplitType,
     state: FheString,
     pat: FheString,
-    prev_was_some: RadixCiphertext,
+    prev_was_some: BooleanBlock,
     counter: u16,
     max_counter: RadixCiphertext,
-    counter_lt_max: RadixCiphertext,
+    counter_lt_max: BooleanBlock,
 }
 
 struct SplitNInternal {
     internal: SplitInternal,
     n: UIntArg,
     counter: u16,
-    not_exceeded: RadixCiphertext,
+    not_exceeded: BooleanBlock,
 }
 
 struct SplitNoTrailing {
@@ -226,12 +226,12 @@ struct SplitNoTrailing {
 
 struct SplitNoLeading {
     internal: SplitInternal,
-    prev_return: (FheString, RadixCiphertext),
-    leading_empty_str: RadixCiphertext,
+    prev_return: (FheString, BooleanBlock),
+    leading_empty_str: BooleanBlock,
 }
 
 impl FheStringIterator for SplitInternal {
-    fn next(&mut self, sk: &ServerKey) -> (FheString, RadixCiphertext) {
+    fn next(&mut self, sk: &ServerKey) -> (FheString, BooleanBlock) {
 
         let ((mut index, mut is_some), pat_is_empty) = rayon::join(
             || {
@@ -242,9 +242,8 @@ impl FheStringIterator for SplitInternal {
                 }
             },
             || match sk.is_empty(&self.pat) {
-                FheStringIsEmpty::Padding(mut enc) => {
-                    sk.key.extend_radix_with_trivial_zero_blocks_msb_assign(&mut enc, 15);
-                    enc
+                FheStringIsEmpty::Padding(enc) => {
+                    enc.into_radix(16, &sk.key)
                 },
                 FheStringIsEmpty::NoPadding(clear) => {
                     sk.key.create_trivial_radix(clear as u32, 16)
@@ -290,11 +289,11 @@ impl FheStringIterator for SplitInternal {
 
         // Even if there isn't match, we return Some if there was match in the previous next call,
         // as we are returning the remaining state "wrapped" in Some
-        sk.key.bitor_assign_parallelized(&mut is_some, &self.prev_was_some);
+        sk.key.boolean_bitor_assign(&mut is_some, &self.prev_was_some);
 
         // If pattern is empty, `is_some` is always true, so we make it false when we have reached
         // the last possible counter value
-        sk.key.bitand_assign_parallelized(&mut is_some, &self.counter_lt_max);
+        sk.key.boolean_bitand_assign(&mut is_some, &self.counter_lt_max);
 
         self.prev_was_some = current_is_some;
         self.counter_lt_max = sk.key.scalar_gt_parallelized(&self.max_counter, self.counter);
@@ -305,13 +304,13 @@ impl FheStringIterator for SplitInternal {
 }
 
 impl FheStringIterator for SplitNInternal {
-    fn next(&mut self, sk: &ServerKey) -> (FheString, RadixCiphertext) {
+    fn next(&mut self, sk: &ServerKey) -> (FheString, BooleanBlock) {
         let state = self.internal.state.clone();
 
         let (mut result, mut is_some) = self.internal.next(sk);
 
         // This keeps the original `is_some` value unless we have exceeded n
-        sk.key.bitand_assign_parallelized(&mut is_some, &self.not_exceeded);
+        sk.key.boolean_bitand_assign(&mut is_some, &self.not_exceeded);
 
         // The moment counter is at least one less than n we return the remaining state, and make
         // `not_exceeded` false such that next calls are always None
@@ -320,7 +319,7 @@ impl FheStringIterator for SplitNInternal {
                 if self.counter >= clear_n - 1 {
 
                     result = state;
-                    self.not_exceeded = sk.key.create_trivial_zero_radix(1);
+                    self.not_exceeded = sk.key.create_trivial_boolean_block(false);
                 }
             }
             UIntArg::Enc(enc_n) => {
@@ -334,11 +333,10 @@ impl FheStringIterator for SplitNInternal {
                     || result = sk.conditional_string(&exceeded, state, &result),
 
                     || {
-                        self.not_exceeded = sk.key.if_then_else_parallelized(
-                            &exceeded,
-                            &sk.key.create_trivial_zero_radix(1),
-                            &self.not_exceeded,
-                        );
+                        let current_not_exceeded = sk.key.boolean_bitnot(&exceeded);
+
+                        // If current is not exceeded we use the previous not_exceeded value, or false if it's exceeded
+                        sk.key.boolean_bitand_assign(&mut self.not_exceeded, &current_not_exceeded);
                     },
                 );
             }
@@ -351,7 +349,7 @@ impl FheStringIterator for SplitNInternal {
 }
 
 impl FheStringIterator for SplitNoTrailing {
-    fn next(&mut self, sk: &ServerKey) -> (FheString, RadixCiphertext) {
+    fn next(&mut self, sk: &ServerKey) -> (FheString, BooleanBlock) {
         let (result, mut is_some) = self.internal.next(sk);
 
         let (result_is_empty, prev_was_none) = rayon::join(
@@ -360,26 +358,24 @@ impl FheStringIterator for SplitNoTrailing {
             // return None to remove it
             || match sk.is_empty(&result) {
                 FheStringIsEmpty::Padding(enc) => enc,
-                FheStringIsEmpty::NoPadding(clear) => sk.key.create_trivial_radix(clear as u32, 1),
+                FheStringIsEmpty::NoPadding(clear) => sk.key.create_trivial_boolean_block(clear),
             },
-            // Invert the bit value (01 XOR 01 = 00 and 00 XOR 01 = 01)
-            || sk.key.scalar_bitxor_parallelized(&self.internal.prev_was_some, 1u8),
+            || sk.key.boolean_bitnot(&self.internal.prev_was_some),
         );
 
-        let trailing_empty_str = sk.key.bitand_parallelized(&result_is_empty, &prev_was_none);
+        let trailing_empty_str = sk.key.boolean_bitand(&result_is_empty, &prev_was_none);
 
-        is_some = sk.key.if_then_else_parallelized(
-            &trailing_empty_str,
-            &sk.key.create_trivial_zero_radix(1),
-            &is_some,
-        );
+        let not_trailing_empty_str = sk.key.boolean_bitnot(&trailing_empty_str);
+
+        // If there's no empty trailing string we get the previous `is_some`, else we get false (None)
+        sk.key.boolean_bitand_assign(&mut is_some, &not_trailing_empty_str);
 
         (result, is_some)
     }
 }
 
 impl FheStringIterator for SplitNoLeading {
-    fn next(&mut self, sk: &ServerKey) -> (FheString, RadixCiphertext) {
+    fn next(&mut self, sk: &ServerKey) -> (FheString, BooleanBlock) {
         // We want to remove the leading empty string i.e. the first returned substring should be skipped if empty.
         //
         // To achieve that we have computed a next call in advance and conditionally assign values based on the
@@ -396,11 +392,17 @@ impl FheStringIterator for SplitNoLeading {
                 )
             },
             || {
-                sk.key.if_then_else_parallelized(
-                    &self.leading_empty_str,
-                    &is_some,
-                    &self.prev_return.1,
-                )
+                let (lhs, rhs) = rayon::join(
+                    // This is `is_some` if `leading_empty_str` is true, false otherwise
+                    || sk.key.boolean_bitand(&self.leading_empty_str, &is_some),
+                    // This is the flag from the previous next call if `leading_empty_str` is true, false otherwise
+                    || sk.key.boolean_bitand(
+                        &sk.key.boolean_bitnot(&self.leading_empty_str),
+                        &self.prev_return.1
+                    ),
+                );
+
+                sk.key.boolean_bitor(&lhs, &rhs)
             }
         );
 

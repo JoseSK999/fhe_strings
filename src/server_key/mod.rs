@@ -5,7 +5,7 @@ mod comp;
 
 use std::cmp::Ordering;
 use rayon::prelude::*;
-use tfhe::integer::{IntegerCiphertext, RadixCiphertext, ServerKey as FheServerKey};
+use tfhe::integer::{BooleanBlock, IntegerCiphertext, RadixCiphertext, ServerKey as FheServerKey};
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::client_key::ClientKey;
 
@@ -24,7 +24,7 @@ pub fn gen_keys() -> (ClientKey, ServerKey) {
 
 impl ServerKey {
     pub fn new(from: &ClientKey) -> Self {
-        Self { key: FheServerKey::new(from.key()) }
+        Self { key: FheServerKey::new_radix_server_key(from.key()) }
     }
 
     pub fn key(&self) -> &FheServerKey {
@@ -61,7 +61,7 @@ pub enum FheStringLen {
 
 pub enum FheStringIsEmpty {
     NoPadding(bool),
-    Padding(RadixCiphertext),
+    Padding(BooleanBlock),
 }
 
 // A few helper functions for the implementations
@@ -73,7 +73,7 @@ impl ServerKey {
         &self,
         str: I,
         pat: U,
-    ) -> RadixCiphertext
+    ) -> BooleanBlock
         where I: DoubleEndedIterator<Item = &'a FheAsciiChar>,
               U: DoubleEndedIterator<Item = &'a FheAsciiChar>,
     {
@@ -88,30 +88,22 @@ impl ServerKey {
         let mut uint_str = RadixCiphertext::from_blocks(blocks_str);
         let mut uint_pat = RadixCiphertext::from_blocks(blocks_pat);
 
-        self.trim_ciphertexs_lsb(&mut uint_str, &mut uint_pat);
+        self.trim_ciphertexts_lsb(&mut uint_str, &mut uint_pat);
 
-        let result = self.key.eq_parallelized(&uint_str, &uint_pat);
-        let len = result.blocks().len();
-
-        if len > 1 {
-            // Return just the block containing the boolean value
-            self.key.trim_radix_blocks_msb(&result, len - 1)
-        } else {
-            result
-        }
+        self.key.eq_parallelized(&uint_str, &uint_pat)
     }
 
     fn asciis_eq_ignore_pat_pad<'a, I>(
         &self,
         str_pat: I,
-    ) -> RadixCiphertext
+    ) -> BooleanBlock
         where
             I: ParallelIterator<Item = (&'a FheAsciiChar, &'a FheAsciiChar)>,
     {
-        let mut result = self.key.create_trivial_radix(1, 1);
+        let mut result = self.key.create_trivial_boolean_block(true);
 
         let eq_or_null_pat: Vec<_> = str_pat.map(|(str_char, pat_char)| {
-            let (mut are_eq, mut pat_is_null) = rayon::join(
+            let (are_eq, pat_is_null) = rayon::join(
                 || self.key.eq_parallelized(
                     str_char.ciphertext(),
                     pat_char.ciphertext(),
@@ -121,12 +113,12 @@ impl ServerKey {
 
             // If `pat_char` is null then `are_eq` is set to true. Hence if ALL `pat_char`s are
             // null, the result is always true, which is correct since the pattern is empty
-            self.key.smart_bitor_parallelized(&mut are_eq, &mut pat_is_null)
+            self.key.boolean_bitor(&are_eq, &pat_is_null)
         }).collect();
 
-        for mut eq_or_null in eq_or_null_pat {
+        for eq_or_null in eq_or_null_pat {
             // Will be false if `str_char` != `pat_char` and `pat_char` isn't null
-            self.key.smart_bitand_assign_parallelized(&mut result, &mut eq_or_null);
+            self.key.boolean_bitand_assign(&mut result, &eq_or_null);
         }
 
         result
@@ -165,7 +157,7 @@ impl ServerKey {
         }
     }
 
-    fn trim_ciphertexs_lsb(&self, lhs: &mut RadixCiphertext, rhs: &mut RadixCiphertext) {
+    fn trim_ciphertexts_lsb(&self, lhs: &mut RadixCiphertext, rhs: &mut RadixCiphertext) {
         let lhs_blocks = lhs.blocks().len();
         let rhs_blocks = rhs.blocks().len();
 
@@ -182,7 +174,7 @@ impl ServerKey {
         }
     }
 
-    fn conditional_string(&self, condition: &RadixCiphertext, true_ct: FheString, false_ct: &FheString) -> FheString {
+    fn conditional_string(&self, condition: &BooleanBlock, true_ct: FheString, false_ct: &FheString) -> FheString {
         let padded = true_ct.is_padded() && false_ct.is_padded();
         let potentially_padded = true_ct.is_padded() || false_ct.is_padded();
 
@@ -258,7 +250,7 @@ impl ServerKey {
 }
 
 pub trait FheStringIterator {
-    fn next (&mut self, sk: &ServerKey) -> (FheString, RadixCiphertext);
+    fn next (&mut self, sk: &ServerKey) -> (FheString, BooleanBlock);
 }
 
 #[derive(Clone)]
