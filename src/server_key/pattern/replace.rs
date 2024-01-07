@@ -1,26 +1,20 @@
-use tfhe::integer::RadixCiphertext;
-use crate::ciphertext::{FheString, UIntArg};
-use crate::server_key::{FheStringIsEmpty, FheStringLen, ServerKey};
+use crate::ciphertext::{FheString, GenericPattern, UIntArg};
 use crate::server_key::pattern::IsMatch;
+use crate::server_key::{FheStringIsEmpty, FheStringLen, ServerKey};
+use tfhe::integer::{BooleanBlock, RadixCiphertext};
 
 impl ServerKey {
     // Replaces the pattern ignoring the first `start` chars (i.e. these are not replaced)
     // Also returns the length up to the end of `to` in the replaced str, or 0 if there's no match
     fn replace_once(
         &self,
+        replace: &BooleanBlock,
+        find_index: &RadixCiphertext,
+        from_len: &FheStringLen,
+        enc_to_len: &RadixCiphertext,
         str: &FheString,
-        from: &FheString,
         to: &FheString,
-        skip: &RadixCiphertext,
     ) -> (FheString, RadixCiphertext) {
-        // We first shift str `skip` chars left to ignore them and check if there's a match
-        let shifted_str = self.left_shift_chars(str, skip);
-
-        let (mut index, is_match) = self.find(&shifted_str, from);
-
-        // We add `skip` to the index as we will operate with the non shifted str
-        self.key.add_assign_parallelized(&mut index, skip);
-
         // When there's match we get the part of the str before and after the pattern by shifting.
         // Then we concatenate the left part with `to` and with the right part.
         // Visually:
@@ -38,9 +32,9 @@ impl ServerKey {
                 let str_len = self.key.create_trivial_radix(str.chars().len() as u32, 16);
 
                 // Get the [lhs] shifting right by [from, rhs].len()
-                let shift_right = self.key.sub_parallelized(&str_len, &index);
+                let shift_right = self.key.sub_parallelized(&str_len, find_index);
                 let mut lhs = self.right_shift_chars(str, &shift_right);
-                // As lhs is shifted right we know there aren't nulls on the right (unless it's empty)
+                // As lhs is shifted right we know there aren't nulls on the right, unless empty
                 lhs.set_is_padded(false);
 
                 let mut replaced = self.concat(&lhs, to);
@@ -52,15 +46,16 @@ impl ServerKey {
                 replaced
             },
             || {
-                let real_from_len = match self.len(from) {
-                    FheStringLen::Padding(enc_val) => enc_val,
-                    FheStringLen::NoPadding(val) => {
-                        self.key.create_trivial_radix(val as u32, 16)
+                // Get the [rhs] shifting left by [lhs, from].len()
+                let shift_left = match from_len {
+                    FheStringLen::NoPadding(len) => {
+                        self.key.scalar_add_parallelized(find_index, *len as u32)
+                    }
+                    FheStringLen::Padding(enc_len) => {
+                        self.key.add_parallelized(find_index, enc_len)
                     }
                 };
 
-                // Get the [rhs] shifting left by [lhs, from].len()
-                let shift_left = self.key.add_parallelized(&index, &real_from_len);
                 let mut rhs = self.left_shift_chars(str, &shift_left);
                 rhs.set_is_padded(true);
 
@@ -70,97 +65,142 @@ impl ServerKey {
 
         replaced = self.concat(&replaced, &rhs);
 
-        let (return_str, return_index) = rayon::join(
+        rayon::join(
             // Return the replaced value only when there is match, else return the original str
-            || self.conditional_string(&is_match, replaced, str),
-
+            || self.conditional_string(replace, replaced, str),
             || {
                 // If there's match we return [lhs, to].len(), else we return 0 (index default)
-                let real_to_len = match self.len(to) {
-                    FheStringLen::Padding(enc_val) => enc_val,
-                    FheStringLen::NoPadding(val) => {
-                        self.key.create_trivial_radix(val as u32, 16)
-                    }
-                };
                 let add_to_index = self.key.if_then_else_parallelized(
-                    &is_match,
-                    &real_to_len,
+                    replace,
+                    enc_to_len,
                     &self.key.create_trivial_zero_radix(16),
                 );
-                self.key.add_parallelized(&index, &add_to_index)
+                self.key.add_parallelized(find_index, &add_to_index)
             },
-        );
-
-        (return_str, return_index)
+        )
     }
 
     fn replace_n_times(
         &self,
         iterations: u16,
         result: &mut FheString,
-        from: &FheString,
+        from: &GenericPattern,
         to: &FheString,
         enc_n: Option<&RadixCiphertext>,
     ) {
         let mut skip = self.key.create_trivial_zero_radix(16);
+        let trivial_or_enc_from = match from {
+            GenericPattern::Clear(from) => FheString::trivial(self, from.str()),
+            GenericPattern::Enc(from) => from.clone(),
+        };
 
-        let (from_is_empty, real_str_len) = rayon::join(
-            || match self.is_empty(from) {
-                FheStringIsEmpty::Padding(enc) => enc,
-                FheStringIsEmpty::NoPadding(clear) => self.key.create_trivial_boolean_block(clear),
+        let ((from_is_empty, from_len), (str_len, enc_to_len)) = rayon::join(
+            || {
+                rayon::join(
+                    || self.is_empty(&trivial_or_enc_from),
+                    || self.len(&trivial_or_enc_from),
+                )
             },
-            || match self.len(result) {
-                FheStringLen::Padding(enc_val) => enc_val,
-                FheStringLen::NoPadding(val) => {
-                    self.key.create_trivial_radix(val as u32, 16)
-                }
+            || {
+                rayon::join(
+                    || self.len(result),
+                    || match self.len(to) {
+                        FheStringLen::Padding(enc_val) => enc_val,
+                        FheStringLen::NoPadding(val) => {
+                            self.key.create_trivial_radix(val as u32, 16)
+                        }
+                    },
+                )
             },
         );
 
         for i in 0..iterations {
             let prev = result.clone();
-            (*result, skip) = self.replace_once(result, from, to, &skip);
+
+            let (_, no_more_matches) = rayon::join(
+                || {
+                    // We first shift str `skip` chars left to ignore them and check if there's a
+                    // match
+                    let shifted_str = self.left_shift_chars(result, &skip);
+
+                    let (mut index, is_match) = self.find(&shifted_str, from);
+
+                    // We add `skip` to get the actual index of the pattern (in the non shifted str)
+                    self.key.add_assign_parallelized(&mut index, &skip);
+
+                    (*result, skip) =
+                        self.replace_once(&is_match, &index, &from_len, &enc_to_len, result, to);
+                },
+                || self.no_more_matches(&str_len, &from_is_empty, i, enc_n),
+            );
 
             rayon::join(
-                || {
-                    let (mut no_more_matches, enc_n_is_exceeded) = rayon::join(
-                        // If `from_is_empty` and our iteration exceeds the length of the str, that means
-                        // there cannot be more empty string matches.
-                        //
-                        // For instance "ww" can at most have 3 empty string matches, so we only take the
-                        // result at iteration 0, 1, and 2
-                        || {
-                            let no_more_matches = self.key.scalar_lt_parallelized(&real_str_len, i);
-
-                            self.key.boolean_bitand(&no_more_matches, &from_is_empty)
-                        },
-
-                        || enc_n.map(|n| self.key.scalar_le_parallelized(n, i)),
-                    );
-
-                    if let Some(exceeded) = enc_n_is_exceeded {
-                        self.key.boolean_bitor_assign(&mut no_more_matches, &exceeded);
-                    }
-
-                    *result = self.conditional_string(&no_more_matches, prev, result)
-                },
-
+                || *result = self.conditional_string(&no_more_matches, prev, result),
                 // If we replace "" to "a" in the "ww" str, we get "awawa". So when `from_is_empty`
                 // we need to move to the next space between letters by adding 1 to the skip value
-                || self.key.add_assign_parallelized(
-                    &mut skip,
-                    &from_is_empty.clone().into_radix(1, &self.key),
-                ),
+                || match &from_is_empty {
+                    FheStringIsEmpty::Padding(enc) => self
+                        .key
+                        .add_assign_parallelized(&mut skip, &enc.clone().into_radix(1, &self.key)),
+
+                    FheStringIsEmpty::NoPadding(clear) => {
+                        self.key
+                            .scalar_add_assign_parallelized(&mut skip, *clear as u8);
+                    }
+                },
             );
         }
+    }
+
+    fn no_more_matches(
+        &self,
+        str_len: &FheStringLen,
+        from_is_empty: &FheStringIsEmpty,
+        current_iteration: u16,
+        enc_n: Option<&RadixCiphertext>,
+    ) -> BooleanBlock {
+        let (mut no_more_matches, enc_n_is_exceeded) = rayon::join(
+            // If `from_is_empty` and our iteration exceeds the length of the str, that means
+            // there cannot be more empty string matches.
+            //
+            // For instance "ww" can at most have 3 empty string matches, so we only take the
+            // result at iteration 0, 1, and 2
+            || {
+                let no_more_matches = match &str_len {
+                    FheStringLen::Padding(enc) => {
+                        self.key.scalar_lt_parallelized(enc, current_iteration)
+                    }
+                    FheStringLen::NoPadding(clear) => self
+                        .key
+                        .create_trivial_boolean_block(*clear < current_iteration as usize),
+                };
+
+                match &from_is_empty {
+                    FheStringIsEmpty::Padding(enc) => {
+                        self.key.boolean_bitand(&no_more_matches, enc)
+                    }
+                    FheStringIsEmpty::NoPadding(clear) => {
+                        let trivial = self.key.create_trivial_boolean_block(*clear);
+                        self.key.boolean_bitand(&no_more_matches, &trivial)
+                    }
+                }
+            },
+            || enc_n.map(|n| self.key.scalar_le_parallelized(n, current_iteration)),
+        );
+
+        if let Some(exceeded) = enc_n_is_exceeded {
+            self.key
+                .boolean_bitor_assign(&mut no_more_matches, &exceeded);
+        }
+
+        no_more_matches
     }
 
     fn max_matches(&self, str: &FheString, pat: &FheString) -> u16 {
         let str_len = str.chars().len() - if str.is_padded() { 1 } else { 0 };
 
         // Max number of matches is str_len + 1 when pattern is empty
-        let mut max: u16 = (str_len + 1).try_into()
-            .expect("str should be shorter");
+        let mut max: u16 = (str_len + 1).try_into().expect("str should be shorter");
 
         // If we know the actual `from` length, the max number of matches can be computed as
         // str_len - pat_len + 1. For instance "xx" matches "xxxx" at most 4 - 2 + 1 = 3 times.
@@ -173,12 +213,19 @@ impl ServerKey {
         max
     }
 
-    /// Returns a new encrypted string where a specified number of occurrences of an encrypted
-    /// pattern are replaced by another encrypted pattern. The number of replacements to perform
-    /// is specified by a `UIntArg`, which can be either `Clear` or `Enc`.
+    /// Returns a new encrypted string with a specified number of non-overlapping occurrences of a
+    /// pattern (either encrypted or clear) replaced by another specified encrypted pattern.
     ///
-    /// In the `Clear` case, the function uses a plain `u16` value for the count. In the `Enc`
-    /// case, the count is an encrypted `u16` value, encrypted with `ck.encrypt_u16`.
+    /// The number of replacements to perform is specified by a `UIntArg`, which can be either
+    /// `Clear` or `Enc`. In the `Clear` case, the function uses a plain `u16` value for the count.
+    /// In the `Enc` case, the count is an encrypted `u16` value, encrypted with `ck.encrypt_u16`.
+    ///
+    /// If the pattern to be replaced is not found or the count is zero, returns the original
+    /// encrypted string unmodified.
+    ///
+    /// The pattern to search for can be either `GenericPattern::Clear` for a clear string or
+    /// `GenericPattern::Enc` for an encrypted string, while the replacement pattern is always
+    /// encrypted.
     ///
     /// # Examples
     ///
@@ -187,7 +234,7 @@ impl ServerKey {
     /// let (s, from, to) = ("hello", "l", "r");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_from = FheString::new(&ck, &from, None);
+    /// let enc_from = GenericPattern::Enc(FheString::new(&ck, &from, None));
     /// let enc_to = FheString::new(&ck, &to, None);
     ///
     /// // Using Clear count
@@ -206,22 +253,32 @@ impl ServerKey {
     ///
     /// assert_eq!(replaced_enc, "herlo");
     /// ```
-    pub fn replacen(&self, str: &FheString, from: &FheString, to: &FheString, count: &UIntArg) -> FheString {
+    pub fn replacen(
+        &self,
+        str: &FheString,
+        from: &GenericPattern,
+        to: &FheString,
+        count: &UIntArg,
+    ) -> FheString {
         let mut result = str.clone();
 
         if let UIntArg::Clear(0) = count {
-            return result
+            return result;
         }
 
-        match self.length_checks(str, from) {
+        let trivial_or_enc_from = match from {
+            GenericPattern::Clear(from) => FheString::trivial(self, from.str()),
+            GenericPattern::Enc(from) => from.clone(),
+        };
+
+        match self.length_checks(str, &trivial_or_enc_from) {
             IsMatch::Clear(false) => return result,
 
             IsMatch::Clear(true) => {
                 // If `from` is empty and str too, there's only one match and one replacement
                 if str.chars().is_empty() || (str.is_padded() && str.chars().len() == 1) {
-
                     if let UIntArg::Clear(_) = count {
-                        return to.clone()
+                        return to.clone();
                     }
 
                     // We have to take into account that encrypted n could be 0
@@ -230,19 +287,19 @@ impl ServerKey {
 
                         let mut re = self.conditional_string(&n_is_zero, result, to);
 
-                        // When result or to are empty we get padding via the conditional_string > pad_ciphertexts_lsb
-                        // And the condition result may or may not have padding in this case.
+                        // When result or to are empty we get padding via the conditional_string
+                        // (pad_ciphertexts_lsb). And the condition result may or may not have
+                        // padding in this case.
                         re.append_null(self);
-                        return re
+                        return re;
                     }
                 }
             }
             // This happens when str is empty, so it's again one replacement if there's match or
             // if there isn't we return the str
             IsMatch::Cipher(val) => {
-
                 if let UIntArg::Clear(_) = count {
-                    return self.conditional_string(&val, to.clone(), str)
+                    return self.conditional_string(&val, to.clone(), str);
                 }
 
                 if let UIntArg::Enc(enc_n) = count {
@@ -251,10 +308,11 @@ impl ServerKey {
 
                     let mut re = self.conditional_string(&and_val, to.clone(), str);
 
-                    // When result or to are empty we get padding via the conditional_string > pad_ciphertexts_lsb
-                    // And the condition result may or may not have padding in this case.
+                    // When result or to are empty we get padding via the conditional_string
+                    // (pad_ciphertexts_lsb). And the condition result may or may not have
+                    // padding in this case.
                     re.append_null(self);
-                    return re
+                    return re;
                 }
             }
             _ => (),
@@ -262,7 +320,7 @@ impl ServerKey {
 
         match count {
             UIntArg::Clear(n) => {
-                let max = self.max_matches(str, from);
+                let max = self.max_matches(str, &trivial_or_enc_from);
 
                 // If n > max number of matches we use that max to avoid unnecessary iterations
                 let iterations = if *n > max { max } else { *n };
@@ -281,12 +339,15 @@ impl ServerKey {
         result
     }
 
-    /// Returns a new encrypted string with all occurrences of an encrypted pattern replaced
-    /// by another encrypted pattern.
+    /// Returns a new encrypted string with all non-overlapping occurrences of a pattern (either
+    /// encrypted or clear) replaced by another specified encrypted pattern.
     ///
-    /// If the pattern is found in the original encrypted string, it is replaced by the
-    /// replacement pattern in the resulting encrypted string. If the pattern is not found,
-    /// the original encrypted string is returned unchanged.
+    /// If the pattern to be replaced is not found, returns the original encrypted string
+    /// unmodified.
+    ///
+    /// The pattern to search for can be either `GenericPattern::Clear` for a clear string or
+    /// `GenericPattern::Enc` for an encrypted string, while the replacement pattern is always
+    /// encrypted.
     ///
     /// # Examples
     ///
@@ -295,7 +356,7 @@ impl ServerKey {
     /// let (s, from, to) = ("hi", "i", "o");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_from = FheString::new(&ck, &from, None);
+    /// let enc_from = GenericPattern::Enc(FheString::new(&ck, &from, None));
     /// let enc_to = FheString::new(&ck, &to, None);
     ///
     /// let result = sk.replace(&enc_s, &enc_from, &enc_to);
@@ -303,32 +364,34 @@ impl ServerKey {
     ///
     /// assert_eq!(replaced, "ho"); // "i" is replaced by "o" in "hi"
     ///
-    /// let enc_from_not_found = FheString::new(&ck, "x", None);
-    /// let result_no_change = sk.replace(&enc_s, &enc_from_not_found, &enc_to);
+    /// let clear_from_not_found = GenericPattern::Clear(ClearString::new(String::from("x")));
+    /// let result_no_change = sk.replace(&enc_s, &clear_from_not_found, &enc_to);
     /// let not_replaced = ck.decrypt_ascii(&result_no_change);
     ///
     /// assert_eq!(not_replaced, "hi"); // No match, original string returned
     /// ```
-    pub fn replace(&self, str: &FheString, from: &FheString, to: &FheString) -> FheString {
+    pub fn replace(&self, str: &FheString, from: &GenericPattern, to: &FheString) -> FheString {
         let mut result = str.clone();
+        let trivial_or_enc_from = match from {
+            GenericPattern::Clear(from) => FheString::trivial(self, from.str()),
+            GenericPattern::Enc(from) => from.clone(),
+        };
 
-        match self.length_checks(str, from) {
+        match self.length_checks(str, &trivial_or_enc_from) {
             IsMatch::Clear(false) => return result,
             IsMatch::Clear(true) => {
                 // If `from` is empty and str too, there's only one match and one replacement
                 if str.chars().is_empty() || (str.is_padded() && str.chars().len() == 1) {
-                    return to.clone()
+                    return to.clone();
                 }
             }
             // This happens when str is empty, so it's again one replacement if there's match or
             // if there isn't we return the str
-            IsMatch::Cipher(val) => {
-                return self.conditional_string(&val, to.clone(), str)
-            }
+            IsMatch::Cipher(val) => return self.conditional_string(&val, to.clone(), str),
             _ => (),
         }
 
-        let max = self.max_matches(str, from);
+        let max = self.max_matches(str, &trivial_or_enc_from);
         println!("max {}", max);
         self.replace_n_times(max, &mut result, from, to, None);
 

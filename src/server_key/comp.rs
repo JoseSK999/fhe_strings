@@ -1,6 +1,6 @@
-use tfhe::integer::BooleanBlock;
-use crate::ciphertext::FheString;
+use crate::ciphertext::{FheString, GenericPattern};
 use crate::server_key::{FheStringIsEmpty, ServerKey};
+use tfhe::integer::BooleanBlock;
 
 impl ServerKey {
     fn eq_length_checks(&self, lhs: &FheString, rhs: &FheString) -> Option<BooleanBlock> {
@@ -15,7 +15,7 @@ impl ServerKey {
                 FheStringIsEmpty::NoPadding(val) => {
                     Some(self.key.create_trivial_boolean_block(val))
                 }
-            }
+            };
         }
 
         // If rhs is empty, lhs must also be empty in order to be equal (only case remaining is if
@@ -24,7 +24,7 @@ impl ServerKey {
             return match self.is_empty(lhs) {
                 FheStringIsEmpty::Padding(enc_val) => Some(enc_val),
                 _ => Some(self.key.create_trivial_boolean_block(false)),
-            }
+            };
         }
 
         // Two strings without padding that have different lengths cannot be equal
@@ -34,8 +34,8 @@ impl ServerKey {
 
         // A string without padding cannot be equal to a string with padding that has the same or
         // lower length
-        if (!lhs.is_padded() && rhs.is_padded()) && (rhs.chars().len() <= lhs.chars().len()) ||
-            (!rhs.is_padded() && lhs.is_padded()) && (lhs.chars().len() <= rhs.chars().len())
+        if (!lhs.is_padded() && rhs.is_padded()) && (rhs.chars().len() <= lhs.chars().len())
+            || (!rhs.is_padded() && lhs.is_padded()) && (lhs.chars().len() <= rhs.chars().len())
         {
             return Some(self.key.create_trivial_boolean_block(false));
         }
@@ -43,9 +43,12 @@ impl ServerKey {
         None
     }
 
-    /// Returns `true` if two encrypted strings are exactly equal.
+    /// Returns `true` if an encrypted string and a pattern (either encrypted or clear) are equal.
     ///
     /// Returns `false` if they are not equal.
+    ///
+    /// The pattern for comparison (`rhs`) can be specified as either `GenericPattern::Clear` for a
+    /// clear string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -54,27 +57,49 @@ impl ServerKey {
     /// let (s1, s2) = ("hello", "hello");
     ///
     /// let enc_s1 = FheString::new(&ck, &s1, None);
-    /// let enc_s2 = FheString::new(&ck, &s2, None);
+    /// let enc_s2 = GenericPattern::Enc(FheString::new(&ck, &s2, None));
     ///
     /// let result = sk.eq(&enc_s1, &enc_s2);
     /// let are_equal = ck.key().decrypt_bool(&result);
     ///
     /// assert!(are_equal);
     /// ```
-    pub fn eq(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
-        if let Some(val) = self.eq_length_checks(lhs, rhs) { return val }
+    pub fn eq(&self, lhs: &FheString, rhs: &GenericPattern) -> BooleanBlock {
+        let early_return = match rhs {
+            GenericPattern::Clear(rhs) => {
+                self.eq_length_checks(lhs, &FheString::trivial(self, rhs.str()))
+            }
+            GenericPattern::Enc(rhs) => self.eq_length_checks(lhs, rhs),
+        };
+
+        if let Some(val) = early_return {
+            return val;
+        }
 
         let mut lhs_uint = lhs.to_uint(self);
-        let mut rhs_uint = rhs.to_uint(self);
+        match rhs {
+            GenericPattern::Clear(rhs) => {
+                let rhs_clear_uint = self.pad_cipher_and_cleartext_lsb(&mut lhs_uint, rhs.str());
 
-        self.pad_ciphertexts_lsb(&mut lhs_uint, &mut rhs_uint);
+                self.key.scalar_eq_parallelized(&lhs_uint, rhs_clear_uint)
+            }
+            GenericPattern::Enc(rhs) => {
+                let mut rhs_uint = rhs.to_uint(self);
 
-        self.key.eq_parallelized(&lhs_uint, &rhs_uint)
+                self.pad_ciphertexts_lsb(&mut lhs_uint, &mut rhs_uint);
+
+                self.key.eq_parallelized(&lhs_uint, &rhs_uint)
+            }
+        }
     }
 
-    /// Returns `true` if two encrypted strings are not equal.
+    /// Returns `true` if an encrypted string and a pattern (either encrypted or clear) are not
+    /// equal.
     ///
     /// Returns `false` if they are equal.
+    ///
+    /// The pattern for comparison (`rhs`) can be specified as either `GenericPattern::Clear` for a
+    /// clear string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -83,14 +108,14 @@ impl ServerKey {
     /// let (s1, s2) = ("hello", "world");
     ///
     /// let enc_s1 = FheString::new(&ck, &s1, None);
-    /// let enc_s2 = FheString::new(&ck, &s2, None);
+    /// let enc_s2 = GenericPattern::Enc(FheString::new(&ck, &s2, None));
     ///
     /// let result = sk.ne(&enc_s1, &enc_s2);
     /// let are_not_equal = ck.key().decrypt_bool(&result);
     ///
     /// assert!(are_not_equal);
     /// ```
-    pub fn ne(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
+    pub fn ne(&self, lhs: &FheString, rhs: &GenericPattern) -> BooleanBlock {
         let eq = self.eq(lhs, rhs);
 
         self.key.boolean_bitnot(&eq)
@@ -150,7 +175,8 @@ impl ServerKey {
         self.key.gt_parallelized(&lhs_uint, &rhs_uint)
     }
 
-    /// Returns `true` if the first encrypted string is less than or equal to the second encrypted string.
+    /// Returns `true` if the first encrypted string is less than or equal to the second encrypted
+    /// string.
     ///
     /// Returns `false` otherwise.
     ///
@@ -177,7 +203,8 @@ impl ServerKey {
         self.key.le_parallelized(&lhs_uint, &rhs_uint)
     }
 
-    /// Returns `true` if the first encrypted string is greater than or equal to the second encrypted string.
+    /// Returns `true` if the first encrypted string is greater than or equal to the second
+    /// encrypted string.
     ///
     /// Returns `false` otherwise.
     ///

@@ -1,7 +1,7 @@
+use crate::ciphertext::{ClearString, FheString, GenericPattern, UIntArg};
+use crate::server_key::{FheStringIsEmpty, FheStringLen, ServerKey};
 use rayon::prelude::*;
 use tfhe::integer::BooleanBlock;
-use crate::ciphertext::{FheString, UIntArg};
-use crate::server_key::{FheStringIsEmpty, FheStringLen, ServerKey};
 
 impl ServerKey {
     /// Returns the length of an encrypted string as an `FheStringLen` enum.
@@ -38,17 +38,12 @@ impl ServerKey {
     /// }
     /// ```
     pub fn len(&self, str: &FheString) -> FheStringLen {
-
         if str.is_padded() {
-
-            let non_zero_chars = str.chars()
-                .iter()
-                .map(|char| {
-                    self.key.scalar_ne_parallelized(
-                        char.ciphertext(),
-                        0u8,
-                    )
-                });
+            let non_zero_chars: Vec<_> = str
+                .chars()
+                .par_iter()
+                .map(|char| self.key.scalar_ne_parallelized(char.ciphertext(), 0u8))
+                .collect();
 
             let mut len = self.key.create_trivial_zero_radix(16);
 
@@ -60,17 +55,15 @@ impl ServerKey {
             }
 
             FheStringLen::Padding(len)
-
         } else {
-
             FheStringLen::NoPadding(str.chars().len())
         }
     }
 
     /// Returns whether an encrypted string is empty or not as an `FheStringIsEmpty` enum.
     ///
-    /// If the encrypted string has no padding, the result is a clear boolean. 
-    /// If there is padding, the result is calculated homomorphically and returned as an 
+    /// If the encrypted string has no padding, the result is a clear boolean.
+    /// If there is padding, the result is calculated homomorphically and returned as an
     /// encrypted `RadixCiphertext`.
     ///
     /// # Examples
@@ -101,30 +94,16 @@ impl ServerKey {
     /// }
     /// ```
     pub fn is_empty(&self, str: &FheString) -> FheStringIsEmpty {
-
         if str.is_padded() {
             if str.chars().len() == 1 {
-                return FheStringIsEmpty::Padding(
-                    self.key.create_trivial_boolean_block(true)
-                );
+                return FheStringIsEmpty::Padding(self.key.create_trivial_boolean_block(true));
             }
 
-            let mut should_be_zero = self.key.create_trivial_zero_radix(4);
-
-            // If the string is empty, then the only content should be padding zeros
-            for char in str.chars() {
-                self.key.bitor_assign_parallelized(
-                    &mut should_be_zero,
-                    char.ciphertext(),
-                );
-            }
-
-            let result = self.key.scalar_eq_parallelized(&should_be_zero, 0u8);
+            let str_uint = str.to_uint(self);
+            let result = self.key.scalar_eq_parallelized(&str_uint, 0u8);
 
             FheStringIsEmpty::Padding(result)
-
         } else {
-
             FheStringIsEmpty::NoPadding(str.chars().is_empty())
         }
     }
@@ -148,20 +127,22 @@ impl ServerKey {
         let mut uppercase = str.clone();
 
         // Returns 1 if the corresponding character is lowercase, 0 otherwise
-        let lowercase_chars: Vec<_> = str.chars()
+        let lowercase_chars: Vec<_> = str
+            .chars()
             .par_iter()
             .map(|char| {
-
                 let (ge_97, le_122) = rayon::join(
                     || self.key.scalar_ge_parallelized(char.ciphertext(), 97u8),
                     || self.key.scalar_le_parallelized(char.ciphertext(), 122u8),
                 );
 
                 self.key.boolean_bitand(&ge_97, &le_122)
-            }).collect();
+            })
+            .collect();
 
         // Subtraction by 32 makes the character uppercase
-        uppercase.chars_mut()
+        uppercase
+            .chars_mut()
             .iter_mut()
             .zip(lowercase_chars)
             .par_bridge()
@@ -170,11 +151,11 @@ impl ServerKey {
 
                 self.key.mul_assign_parallelized(
                     &mut subtract,
-                    // TODO check this 4, could be replaced with 1
-                    &is_lowercase.into_radix(4, &self.key),
+                    &is_lowercase.into_radix(1, &self.key),
                 );
 
-                self.key.sub_assign_parallelized(char.ciphertext_mut(), &subtract);
+                self.key
+                    .sub_assign_parallelized(char.ciphertext_mut(), &subtract);
             });
 
         uppercase
@@ -199,20 +180,22 @@ impl ServerKey {
         let mut lowercase = str.clone();
 
         // Returns 1 if the corresponding character is uppercase, 0 otherwise
-        let uppercase_chars: Vec<_> = str.chars()
+        let uppercase_chars: Vec<_> = str
+            .chars()
             .par_iter()
             .map(|char| {
-
                 let (ge_65, le_90) = rayon::join(
                     || self.key.scalar_ge_parallelized(char.ciphertext(), 65u8),
                     || self.key.scalar_le_parallelized(char.ciphertext(), 90u8),
                 );
 
                 self.key.boolean_bitand(&ge_65, &le_90)
-            }).collect();
+            })
+            .collect();
 
         // Addition by 32 makes the character lowercase
-        lowercase.chars_mut()
+        lowercase
+            .chars_mut()
             .iter_mut()
             .zip(uppercase_chars)
             .par_bridge()
@@ -221,19 +204,23 @@ impl ServerKey {
 
                 self.key.mul_assign_parallelized(
                     &mut add,
-                    // TODO check this 4, could be replaced with 1
-                    &is_uppercase.into_radix(4, &self.key),
+                    &is_uppercase.into_radix(1, &self.key),
                 );
 
-                self.key.add_assign_parallelized(char.ciphertext_mut(), &add);
+                self.key
+                    .add_assign_parallelized(char.ciphertext_mut(), &add);
             });
 
         lowercase
     }
 
-    /// Returns `true` if two encrypted strings are equal, ignoring case differences.
+    /// Returns `true` if an encrypted string and a pattern (either encrypted or clear) are equal,
+    /// ignoring case differences.
     ///
     /// Returns `false` if they are not equal.
+    ///
+    /// The pattern for comparison (`rhs`) can be specified as either `GenericPattern::Clear` for a
+    /// clear string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -242,17 +229,22 @@ impl ServerKey {
     /// let (s1, s2) = ("Hello", "hello");
     ///
     /// let enc_s1 = FheString::new(&ck, &s1, None);
-    /// let enc_s2 = FheString::new(&ck, &s2, None);
+    /// let enc_s2 = GenericPattern::Enc(FheString::new(&ck, &s2, None));
     ///
     /// let result = sk.eq_ignore_case(&enc_s1, &enc_s2);
     /// let are_equal = ck.key().decrypt_bool(&result);
     ///
     /// assert!(are_equal);
     /// ```
-    pub fn eq_ignore_case(&self, lhs: &FheString, rhs: &FheString) -> BooleanBlock {
+    pub fn eq_ignore_case(&self, lhs: &FheString, rhs: &GenericPattern) -> BooleanBlock {
         let (lhs, rhs) = rayon::join(
             || self.to_lowercase(lhs),
-            || self.to_lowercase(rhs),
+            || match rhs {
+                GenericPattern::Clear(rhs) => {
+                    GenericPattern::Clear(ClearString::new(rhs.str().to_lowercase()))
+                }
+                GenericPattern::Enc(rhs) => GenericPattern::Enc(self.to_lowercase(rhs)),
+            },
         );
 
         self.eq(&lhs, &rhs)
@@ -307,7 +299,8 @@ impl ServerKey {
 
     /// Returns a new encrypted string which is the original encrypted string repeated `n` times.
     ///
-    /// The number of repetitions `n` is specified by a `UIntArg`, which can be either `Clear` or `Enc`.
+    /// The number of repetitions `n` is specified by a `UIntArg`, which can be either `Clear` or
+    /// `Enc`.
     ///
     /// # Examples
     ///
@@ -335,12 +328,12 @@ impl ServerKey {
     /// ```
     pub fn repeat(&self, str: &FheString, n: &UIntArg) -> FheString {
         if let UIntArg::Clear(0) = n {
-            return FheString::empty()
+            return FheString::empty();
         }
 
         let str_len = str.chars().len();
         if str_len == 0 || (str.is_padded() && str_len == 1) {
-            return FheString::empty()
+            return FheString::empty();
         }
 
         let mut result = str.clone();
@@ -349,7 +342,6 @@ impl ServerKey {
         match n {
             UIntArg::Clear(clear_n) => {
                 for _ in 0..*clear_n - 1 {
-
                     result = self.concat(&result, str);
                 }
             }
@@ -358,15 +350,15 @@ impl ServerKey {
                 result = self.conditional_string(&n_is_zero, FheString::empty(), &result);
 
                 for i in 0..enc_n.max().unwrap_or(u16::MAX) - 1 {
-
                     let n_is_exceeded = self.key.scalar_le_parallelized(enc_n.cipher(), i + 1);
                     let append = self.conditional_string(&n_is_exceeded, FheString::empty(), str);
 
                     result = self.concat(&result, &append);
                 }
 
-                // If str was not padded and n == max we don't get nulls at the end. However if n < max we do, and
-                // as these conditions are unknown we have to ensure result is actually padded
+                // If str was not padded and n == max we don't get nulls at the end. However if
+                // n < max we do, and as these conditions are unknown we have to ensure result is
+                // actually padded
                 if !str.is_padded() {
                     result.append_null(self);
                 }

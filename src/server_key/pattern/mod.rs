@@ -1,13 +1,13 @@
-mod strip;
 mod contains;
 mod find;
-mod split;
 mod replace;
+mod split;
+mod strip;
 
-use std::ops::Range;
-use tfhe::integer::BooleanBlock;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::{CharIter, FheStringIsEmpty, ServerKey};
+use std::ops::Range;
+use tfhe::integer::BooleanBlock;
 
 // Useful for handling cases in which we know if there is or there isn't a match just by looking at
 // the lengths
@@ -25,7 +25,7 @@ impl ServerKey {
         // If the pattern is empty it will match any string, this is the behavior of core::str
         // Note that this doesn't handle the case where pattern is empty and has > 1 padding zeros
         if pat_len == 0 || (pat.is_padded() && pat_len == 1) {
-            return IsMatch::Clear(true)
+            return IsMatch::Clear(true);
         }
 
         // If our string is an empty string we are just looking if the pattern is also empty (the
@@ -35,41 +35,35 @@ impl ServerKey {
                 FheStringIsEmpty::Padding(value) => IsMatch::Cipher(value),
 
                 _ => IsMatch::Clear(false),
-            }
+            };
         }
 
         if !pat.is_padded() {
             // A pattern without padding cannot be contained in a shorter string without padding
             if !str.is_padded() && (str_len < pat_len) {
-                return IsMatch::Clear(false)
+                return IsMatch::Clear(false);
             }
 
             // A pattern without padding cannot be contained in a string with padding that is
             // shorter or of the same length
             if str.is_padded() && (str_len <= pat_len) {
-                return IsMatch::Clear(false)
+                return IsMatch::Clear(false);
             }
         }
 
         IsMatch::None
     }
-    
+
     fn ends_with_cases<'a>(
         &'a self,
         str: &'a FheString,
         pat: &'a FheString,
         null: Option<&'a FheAsciiChar>,
-    ) -> (
-        CharIter,
-        CharIter,
-        Range<usize>,
-    )
-    {
+    ) -> (CharIter, CharIter, Range<usize>) {
         let pat_len = pat.chars().len();
         let str_len = str.chars().len();
 
         match (str.is_padded(), pat.is_padded()) {
-
             // If neither has padding we just check if pat matches the `pat_len` last chars or str
             (false, false) => {
                 let str_chars = str.chars().iter();
@@ -86,14 +80,17 @@ impl ServerKey {
             // chars long, then it could be "xx\0", "x\0\0" or "\0\0\0", where x != '\0'
             (true, false) => {
                 let str_chars = str.chars()[..str_len - 1].iter();
-                let pat_chars = pat.chars().iter()
-                    .chain(std::iter::once(null.unwrap()));
+                let pat_chars = pat.chars().iter().chain(std::iter::once(null.unwrap()));
 
                 let diff = (str_len - 1) - pat_len;
 
                 let range = 0..diff + 1;
 
-                (CharIter::Iter(str_chars), CharIter::Extended(pat_chars), range)
+                (
+                    CharIter::Iter(str_chars),
+                    CharIter::Extended(pat_chars),
+                    range,
+                )
             }
 
             // If only pat is padded we have to check all the possible padding cases as well
@@ -102,8 +99,7 @@ impl ServerKey {
                 let (str_chars, pat_chars, range) = if pat_len - 1 > str_len {
                     // Pat without last char is longer than str so we check all the str chars
                     (
-                        str.chars().iter()
-                            .chain(std::iter::once(null.unwrap())),
+                        str.chars().iter().chain(std::iter::once(null.unwrap())),
                         pat.chars().iter(),
                         0..str_len + 1,
                     )
@@ -112,14 +108,17 @@ impl ServerKey {
                     // `pat_len` - 1 last chars of str
                     let start = str_len - (pat_len - 1);
                     (
-                        str.chars().iter()
-                            .chain(std::iter::once(null.unwrap())),
+                        str.chars().iter().chain(std::iter::once(null.unwrap())),
                         pat.chars()[..pat_len - 1].iter(),
                         start..start + pat_len,
                     )
                 };
 
-                (CharIter::Extended(str_chars), CharIter::Iter(pat_chars), range)
+                (
+                    CharIter::Extended(str_chars),
+                    CharIter::Iter(pat_chars),
+                    range,
+                )
             }
 
             (true, true) => {
@@ -133,27 +132,52 @@ impl ServerKey {
         }
     }
 
+    fn clear_ends_with_cases<'a>(
+        &'a self,
+        str: &'a FheString,
+        pat: &str,
+    ) -> (CharIter, String, Range<usize>) {
+        let pat_len = pat.len();
+        let str_len = str.chars().len();
+
+        if str.is_padded() {
+            let str_chars = str.chars()[..str_len - 1].iter();
+            let mut pat_chars = pat.to_owned();
+
+            pat_chars.push('\0');
+
+            let diff = (str_len - 1) - pat_len;
+            let range = 0..diff + 1;
+
+            (CharIter::Iter(str_chars), pat_chars, range)
+        } else {
+            let start = str_len - pat_len;
+            let range = start..start + 1;
+
+            (CharIter::Iter(str.chars().iter()), pat.to_owned(), range)
+        }
+    }
+
     fn contains_cases<'a>(
         &'a self,
         str: &'a FheString,
         pat: &'a FheString,
         null: Option<&'a FheAsciiChar>,
-    ) -> (
-        CharIter,
-        CharIter,
-        Range<usize>,
-    ) {
+    ) -> (CharIter, CharIter, Range<usize>) {
         let pat_len = pat.chars().len();
         let str_len = str.chars().len();
 
         match (str.is_padded(), pat.is_padded()) {
-
             (_, false) => {
                 let diff = (str_len - pat_len) - if str.is_padded() { 1 } else { 0 };
 
                 let range = 0..diff + 1;
 
-                (CharIter::Iter(str.chars().iter()), CharIter::Iter(pat.chars().iter()), range)
+                (
+                    CharIter::Iter(str.chars().iter()),
+                    CharIter::Iter(pat.chars().iter()),
+                    range,
+                )
             }
 
             (true, true) => {
@@ -161,17 +185,24 @@ impl ServerKey {
 
                 let range = 0..str_len - 1;
 
-                (CharIter::Iter(str.chars().iter()), CharIter::Iter(pat_chars), range)
+                (
+                    CharIter::Iter(str.chars().iter()),
+                    CharIter::Iter(pat_chars),
+                    range,
+                )
             }
 
             (false, true) => {
                 let pat_chars = pat.chars()[..pat_len - 1].iter();
-                let str_chars = str.chars().iter()
-                    .chain(std::iter::once(null.unwrap()));
+                let str_chars = str.chars().iter().chain(std::iter::once(null.unwrap()));
 
                 let range = 0..str_len;
 
-                (CharIter::Extended(str_chars), CharIter::Iter(pat_chars), range)
+                (
+                    CharIter::Extended(str_chars),
+                    CharIter::Iter(pat_chars),
+                    range,
+                )
             }
         }
     }

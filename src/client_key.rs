@@ -1,6 +1,6 @@
+use crate::ciphertext::FheString;
 use tfhe::integer::{ClientKey as FheClientKey, RadixCiphertext};
 use tfhe::shortint::prelude::PARAM_MESSAGE_2_CARRY_2;
-use crate::ciphertext::{FheString};
 
 /// Represents a client key for encryption and decryption of strings.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -44,24 +44,29 @@ impl EncryptOutput {
 
 impl ClientKey {
     pub fn new() -> Self {
-        Self { key: FheClientKey::new(PARAM_MESSAGE_2_CARRY_2) }
+        Self {
+            key: FheClientKey::new(PARAM_MESSAGE_2_CARRY_2),
+        }
     }
 
     pub fn key(&self) -> &FheClientKey {
         &self.key
     }
 
-    /// Encrypts an ASCII string, optionally padding it with the specified amount of 0s, and returns an [`EncryptOutput`].
+    /// Encrypts an ASCII string, optionally padding it with the specified amount of 0s, and returns
+    /// an [`EncryptOutput`].
     ///
     /// # Panics
     ///
-    /// This function will panic if the provided string is not ASCII or contains null characters "\0".
+    /// This function will panic if the provided string is not ASCII or contains null characters
+    /// "\0".
     pub fn encrypt_ascii(&self, str: &str, padding: Option<u32>) -> EncryptOutput {
         assert!(str.is_ascii() & !str.contains('\0'));
 
         let padded = padding.map_or(false, |p| p != 0);
 
-        let mut enc_chars: Vec<_> = str.bytes()
+        let mut enc_chars: Vec<_> = str
+            .bytes()
             .map(|char| self.key.encrypt_radix(char, 4))
             .collect();
 
@@ -72,7 +77,10 @@ impl ClientKey {
             enc_chars.extend(null);
         }
 
-        EncryptOutput { output: enc_chars, padded }
+        EncryptOutput {
+            output: enc_chars,
+            padded,
+        }
     }
 
     /// Decrypts a `FheString`, removes any padding and returns the ASCII string.
@@ -88,7 +96,6 @@ impl ClientKey {
             .chars()
             .iter()
             .filter_map(|enc_char| {
-
                 let byte = self.key.decrypt_radix(enc_char.ciphertext());
                 print!(" {}", byte);
 
@@ -102,12 +109,20 @@ impl ClientKey {
                     prev_was_null = false;
                 }
 
-                if byte != 0 { Some(byte) } else { None }
-            }).collect();
+                if byte != 0 {
+                    Some(byte)
+                } else {
+                    None
+                }
+            })
+            .collect();
         println!();
 
         if padded_flag {
-            assert!(prev_was_null, "LAST CHAR WAS NOT NULL BUT PADDING FLAG WAS SET")
+            assert!(
+                prev_was_null,
+                "LAST CHAR WAS NOT NULL BUT PADDING FLAG WAS SET"
+            )
         }
 
         String::from_utf8(bytes).unwrap()

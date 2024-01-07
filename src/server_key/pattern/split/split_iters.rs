@@ -1,7 +1,9 @@
-use tfhe::integer::BooleanBlock;
-use crate::ciphertext::{FheString, UIntArg};
+use crate::ciphertext::{FheString, GenericPattern, UIntArg};
+use crate::server_key::pattern::split::{
+    SplitInternal, SplitNInternal, SplitNoLeading, SplitNoTrailing, SplitType,
+};
 use crate::server_key::{FheStringIterator, ServerKey};
-use crate::server_key::pattern::split::{SplitInternal, SplitNInternal, SplitNoLeading, SplitNoTrailing, SplitType};
+use tfhe::integer::BooleanBlock;
 
 pub struct RSplit {
     internal: SplitInternal,
@@ -32,10 +34,15 @@ pub struct RSplitTerminator {
 }
 
 impl ServerKey {
-
-    /// Creates an iterator of encrypted substrings by splitting the original encrypted string based on a specified encrypted pattern.
+    /// Creates an iterator of encrypted substrings by splitting the original encrypted string based
+    /// on a specified pattern (either encrypted or clear).
     ///
-    /// The iterator, of type `Split`, can be used to sequentially retrieve the substrings. Each call to `next` on the iterator returns a tuple with the next split substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    /// The iterator, of type `Split`, can be used to sequentially retrieve the substrings. Each
+    /// call to `next` on the iterator returns a tuple with the next split substring as an encrypted
+    /// string and a boolean indicating `Some` (true) or `None` (false).
+    ///
+    /// The pattern to search for can be specified as either `GenericPattern::Clear` for a clear
+    /// string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -44,7 +51,7 @@ impl ServerKey {
     /// let (s, pat) = ("hello ", " ");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_pat = FheString::new(&ck, &pat, None);
+    /// let enc_pat = GenericPattern::Enc(FheString::new(&ck, &pat, None));
     ///
     /// let mut split_iter = sk.split(&enc_s, &enc_pat);
     /// let (first_item, first_is_some) = split_iter.next(&sk);
@@ -63,15 +70,21 @@ impl ServerKey {
     /// assert!(second_is_some); // There is a second item
     /// assert!(!no_more_items); // No more items in the iterator
     /// ```
-    pub fn split(&self, str: &FheString, pat: &FheString) -> Split {
+    pub fn split(&self, str: &FheString, pat: &GenericPattern) -> Split {
         let internal = self.split_internal(str, pat, SplitType::Split);
 
         Split { internal }
     }
 
-    /// Creates an iterator of encrypted substrings by splitting the original encrypted string from the end based on a specified encrypted pattern.
+    /// Creates an iterator of encrypted substrings by splitting the original encrypted string from
+    /// the end based on a specified pattern (either encrypted or clear).
     ///
-    /// The iterator, of type `RSplit`, can be used to sequentially retrieve the substrings in reverse order. Each call to `next` on the iterator returns a tuple with the next split substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    /// The iterator, of type `RSplit`, can be used to sequentially retrieve the substrings in
+    /// reverse order. Each call to `next` on the iterator returns a tuple with the next split
+    /// substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    ///
+    /// The pattern to search for can be specified as either `GenericPattern::Clear` for a clear
+    /// string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -80,7 +93,7 @@ impl ServerKey {
     /// let (s, pat) = ("hello ", " ");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_pat = FheString::new(&ck, &pat, None);
+    /// let enc_pat = GenericPattern::Enc(FheString::new(&ck, &pat, None));
     ///
     /// let mut rsplit_iter = sk.rsplit(&enc_s, &enc_pat);
     /// let (last_item, last_is_some) = rsplit_iter.next(&sk);
@@ -99,15 +112,22 @@ impl ServerKey {
     /// assert!(second_last_is_some); // The second last item is "hello"
     /// assert!(!no_more_items); // No more items in the reverse iterator
     /// ```
-    pub fn rsplit(&self, str: &FheString, pat: &FheString) -> RSplit {
+    pub fn rsplit(&self, str: &FheString, pat: &GenericPattern) -> RSplit {
         let internal = self.split_internal(str, pat, SplitType::RSplit);
 
         RSplit { internal }
     }
 
-    /// Creates an iterator of encrypted substrings by splitting the original encrypted string based on a specified encrypted pattern, limited to at most `n` results.
+    /// Creates an iterator of encrypted substrings by splitting the original encrypted string based
+    /// on a specified pattern (either encrypted or clear), limited to at most `n` results.
     ///
-    /// The `n` is specified by a `UIntArg`, which can be either `Clear` or `Enc`. The iterator, of type `SplitN`, can be used to sequentially retrieve the substrings. Each call to `next` on the iterator returns a tuple with the next split substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    /// The `n` is specified by a `UIntArg`, which can be either `Clear` or `Enc`. The iterator, of
+    /// type `SplitN`, can be used to sequentially retrieve the substrings. Each call to `next` on
+    /// the iterator returns a tuple with the next split substring as an encrypted string and a
+    /// boolean indicating `Some` (true) or `None` (false).
+    ///
+    /// The pattern to search for can be specified as either `GenericPattern::Clear` for a clear
+    /// string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -116,7 +136,7 @@ impl ServerKey {
     /// let (s, pat) = ("hello world", " ");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_pat = FheString::new(&ck, &pat, None);
+    /// let enc_pat = GenericPattern::Enc(FheString::new(&ck, &pat, None));
     ///
     /// // Using Clear count
     /// let clear_count = UIntArg::Clear(1);
@@ -140,15 +160,23 @@ impl ServerKey {
     /// let mut splitn_iter_enc = sk.splitn(&enc_s, &enc_pat, enc_count);
     /// // Similar usage as with Clear count
     /// ```
-    pub fn splitn(&self, str: &FheString, pat: &FheString, n: UIntArg) -> SplitN {
+    pub fn splitn(&self, str: &FheString, pat: &GenericPattern, n: UIntArg) -> SplitN {
         let internal = self.splitn_internal(str, pat, n, SplitType::Split);
 
         SplitN { internal }
     }
 
-    /// Creates an iterator of encrypted substrings by splitting the original encrypted string from the end based on a specified encrypted pattern, limited to at most `n` results.
+    /// Creates an iterator of encrypted substrings by splitting the original encrypted string from
+    /// the end based on a specified pattern (either encrypted or clear), limited to at most `n`
+    /// results.
     ///
-    /// The `n` is specified by a `UIntArg`, which can be either `Clear` or `Enc`. The iterator, of type `RSplitN`, can be used to sequentially retrieve the substrings in reverse order. Each call to `next` on the iterator returns a tuple with the next split substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    /// The `n` is specified by a `UIntArg`, which can be either `Clear` or `Enc`. The iterator, of
+    /// type `RSplitN`, can be used to sequentially retrieve the substrings in reverse order. Each
+    /// call to `next` on the iterator returns a tuple with the next split substring as an encrypted
+    /// string and a boolean indicating `Some` (true) or `None` (false).
+    ///
+    /// The pattern to search for can be specified as either `GenericPattern::Clear` for a clear
+    /// string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -157,7 +185,7 @@ impl ServerKey {
     /// let (s, pat) = ("hello world", " ");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_pat = FheString::new(&ck, &pat, None);
+    /// let enc_pat = GenericPattern::Enc(FheString::new(&ck, &pat, None));
     ///
     /// // Using Clear count
     /// let clear_count = UIntArg::Clear(1);
@@ -181,15 +209,21 @@ impl ServerKey {
     /// let mut rsplitn_iter_enc = sk.rsplitn(&enc_s, &enc_pat, enc_count);
     /// // Similar usage as with Clear count
     /// ```
-    pub fn rsplitn(&self, str: &FheString, pat: &FheString, n: UIntArg) -> RSplitN {
+    pub fn rsplitn(&self, str: &FheString, pat: &GenericPattern, n: UIntArg) -> RSplitN {
         let internal = self.splitn_internal(str, pat, n, SplitType::RSplit);
 
         RSplitN { internal }
     }
 
-    /// Creates an iterator of encrypted substrings by splitting the original encrypted string based on a specified encrypted pattern, excluding trailing empty substrings.
+    /// Creates an iterator of encrypted substrings by splitting the original encrypted string based
+    /// on a specified pattern (either encrypted or clear), excluding trailing empty substrings.
     ///
-    /// The iterator, of type `SplitTerminator`, can be used to sequentially retrieve the substrings. Each call to `next` on the iterator returns a tuple with the next split substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    /// The iterator, of type `SplitTerminator`, can be used to sequentially retrieve the
+    /// substrings. Each call to `next` on the iterator returns a tuple with the next split
+    /// substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    ///
+    /// The pattern to search for can be specified as either `GenericPattern::Clear` for a clear
+    /// string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -198,7 +232,7 @@ impl ServerKey {
     /// let (s, pat) = ("hello world ", " ");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_pat = FheString::new(&ck, &pat, None);
+    /// let enc_pat = GenericPattern::Enc(FheString::new(&ck, &pat, None));
     ///
     /// let mut split_terminator_iter = sk.split_terminator(&enc_s, &enc_pat);
     /// let (first_item, first_is_some) = split_terminator_iter.next(&sk);
@@ -217,15 +251,24 @@ impl ServerKey {
     /// assert!(second_is_some); // There is a second item
     /// assert!(!no_more_items); // No more items in the iterator
     /// ```
-    pub fn split_terminator(&self, str: &FheString, pat: &FheString) -> SplitTerminator {
+    pub fn split_terminator(&self, str: &FheString, pat: &GenericPattern) -> SplitTerminator {
         let internal = self.split_no_trailing(str, pat, SplitType::Split);
 
         SplitTerminator { internal }
     }
 
-    /// Creates an iterator of encrypted substrings by splitting the original encrypted string from the end based on a specified encrypted pattern, excluding leading empty substrings in the reverse order.
+    /// Creates an iterator of encrypted substrings by splitting the original encrypted string from
+    /// the end based on a specified pattern (either encrypted or clear), excluding leading empty
+    /// substrings in the reverse order.
     ///
-    /// The iterator, of type `RSplitTerminator`, can be used to sequentially retrieve the substrings in reverse order, ignoring any leading empty substring that would result from splitting at the end of the string. Each call to `next` on the iterator returns a tuple with the next split substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    /// The iterator, of type `RSplitTerminator`, can be used to sequentially retrieve the
+    /// substrings in reverse order, ignoring any leading empty substring that would result from
+    /// splitting at the end of the string. Each call to `next` on the iterator returns a tuple with
+    /// the next split substring as an encrypted string and a boolean indicating `Some` (true) or
+    /// `None` (false).
+    ///
+    /// The pattern to search for can be specified as either `GenericPattern::Clear` for a clear
+    /// string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -234,7 +277,7 @@ impl ServerKey {
     /// let (s, pat) = ("hello world ", " ");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_pat = FheString::new(&ck, &pat, None);
+    /// let enc_pat = GenericPattern::Enc(FheString::new(&ck, &pat, None));
     ///
     /// let mut rsplit_terminator_iter = sk.rsplit_terminator(&enc_s, &enc_pat);
     /// let (last_item, last_is_some) = rsplit_terminator_iter.next(&sk);
@@ -248,20 +291,28 @@ impl ServerKey {
     /// let no_more_items = ck.key().decrypt_bool(&no_more_items);
     ///
     /// assert_eq!(last_decrypted, "world");
-    /// assert!(last_is_some); // The last item is "world"
+    /// assert!(last_is_some); // The last item is "world" instead of ""
     /// assert_eq!(second_last_decrypted, "hello");
     /// assert!(second_last_is_some); // The second last item is "hello"
     /// assert!(!no_more_items); // No more items in the reverse iterator
     /// ```
-    pub fn rsplit_terminator(&self, str: &FheString, pat: &FheString) -> RSplitTerminator {
+    pub fn rsplit_terminator(&self, str: &FheString, pat: &GenericPattern) -> RSplitTerminator {
         let internal = self.split_no_leading(str, pat);
 
         RSplitTerminator { internal }
     }
 
-    /// Creates an iterator of encrypted substrings by splitting the original encrypted string based on a specified encrypted pattern, where each substring includes the delimiter. If the string ends with the delimiter, it does not create a trailing empty substring.
+    /// Creates an iterator of encrypted substrings by splitting the original encrypted string based
+    /// on a specified pattern (either encrypted or clear), where each substring includes the
+    /// delimiter. If the string ends with the delimiter, it does not create a trailing empty
+    /// substring.
     ///
-    /// The iterator, of type `SplitInclusive`, can be used to sequentially retrieve the substrings. Each call to `next` on the iterator returns a tuple with the next split substring as an encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    /// The iterator, of type `SplitInclusive`, can be used to sequentially retrieve the substrings.
+    /// Each call to `next` on the iterator returns a tuple with the next split substring as an
+    /// encrypted string and a boolean indicating `Some` (true) or `None` (false).
+    ///
+    /// The pattern to search for can be specified as either `GenericPattern::Clear` for a clear
+    /// string or `GenericPattern::Enc` for an encrypted string.
     ///
     /// # Examples
     ///
@@ -270,7 +321,7 @@ impl ServerKey {
     /// let (s, pat) = ("hello world ", " ");
     ///
     /// let enc_s = FheString::new(&ck, &s, None);
-    /// let enc_pat = FheString::new(&ck, &pat, None);
+    /// let enc_pat = GenericPattern::Enc(FheString::new(&ck, &pat, None));
     ///
     /// let mut split_inclusive_iter = sk.split_inclusive(&enc_s, &enc_pat);
     /// let (first_item, first_is_some) = split_inclusive_iter.next(&sk);
@@ -289,7 +340,7 @@ impl ServerKey {
     /// assert!(second_is_some); // The second item includes the delimiter
     /// assert!(!no_more_items); // No more items in the iterator, no trailing empty string
     /// ```
-    pub fn split_inclusive(&self, str: &FheString, pat: &FheString) -> SplitInclusive {
+    pub fn split_inclusive(&self, str: &FheString, pat: &GenericPattern) -> SplitInclusive {
         let internal = self.split_no_trailing(str, pat, SplitType::SplitInclusive);
 
         SplitInclusive { internal }

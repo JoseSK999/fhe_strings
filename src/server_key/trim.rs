@@ -1,7 +1,7 @@
-use rayon::prelude::*;
-use tfhe::integer::BooleanBlock;
 use crate::ciphertext::{FheAsciiChar, FheString};
 use crate::server_key::{FheStringLen, ServerKey};
+use rayon::prelude::*;
+use tfhe::integer::BooleanBlock;
 
 pub struct SplitAsciiWhitespace {
     initial_string: FheString,
@@ -30,7 +30,6 @@ impl SplitAsciiWhitespace {
 
         let mut prev_was_not = sk.key.create_trivial_boolean_block(true);
         for char in mask.chars_mut().iter_mut() {
-
             let mut is_not_ws = sk.is_not_whitespace(char);
             sk.key.boolean_bitand_assign(&mut is_not_ws, &prev_was_not);
 
@@ -46,17 +45,15 @@ impl SplitAsciiWhitespace {
         }
 
         // Apply the mask to get the result
-        result.chars_mut()
+        result
+            .chars_mut()
             .iter_mut()
             .zip(mask.chars())
             .par_bridge()
             .for_each(|(char, mask_u8)| {
-
-            sk.key.bitand_assign_parallelized(
-                char.ciphertext_mut(),
-                mask_u8.ciphertext(),
-            );
-        });
+                sk.key
+                    .bitand_assign_parallelized(char.ciphertext_mut(), mask_u8.ciphertext());
+            });
 
         self.current_mask = Some(mask);
 
@@ -69,12 +66,9 @@ impl SplitAsciiWhitespace {
 
         let mut number_of_trues = sk.key.create_trivial_zero_radix(16);
         for mask_u8 in mask.chars() {
-
             let is_true = sk.key.scalar_eq_parallelized(mask_u8.ciphertext(), 255u8);
-            sk.key.add_assign_parallelized(
-                &mut number_of_trues,
-                &is_true.into_radix(1, &sk.key),
-            );
+            sk.key
+                .add_assign_parallelized(&mut number_of_trues, &is_true.into_radix(1, &sk.key));
         }
 
         let padded = self.initial_string.is_padded();
@@ -84,8 +78,8 @@ impl SplitAsciiWhitespace {
         if padded {
             self.initial_string.set_is_padded(true);
         } else {
-            // If it was not padded now we cannot assume it's not padded (because of the left shift) so we add a null
-            // to ensure it's always padded
+            // If it was not padded now we cannot assume it's not padded (because of the left shift)
+            // so we add a null to ensure it's always padded
             self.initial_string.append_null(sk);
         }
     }
@@ -94,25 +88,33 @@ impl SplitAsciiWhitespace {
 impl ServerKey {
     // As specified in https://doc.rust-lang.org/core/primitive.char.html#method.is_ascii_whitespace
     fn is_whitespace(&self, char: &FheAsciiChar, or_null: bool) -> BooleanBlock {
-
         let (((is_space, is_tab), (is_new_line, is_form_feed)), is_carriage_return) = rayon::join(
-            || rayon::join(
-                || rayon::join(
-                    || self.key.scalar_eq_parallelized(char.ciphertext(), 0x20u8),
-                    || self.key.scalar_eq_parallelized(char.ciphertext(), 0x09u8),
-                ),
-                || rayon::join(
-                    || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Au8),
-                    || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Cu8),
-                ),
-            ),
+            || {
+                rayon::join(
+                    || {
+                        rayon::join(
+                            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x20u8),
+                            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x09u8),
+                        )
+                    },
+                    || {
+                        rayon::join(
+                            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Au8),
+                            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Cu8),
+                        )
+                    },
+                )
+            },
             || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Du8),
         );
 
         let mut is_whitespace = self.key.boolean_bitor(&is_space, &is_tab);
-        self.key.boolean_bitor_assign(&mut is_whitespace, &is_new_line);
-        self.key.boolean_bitor_assign(&mut is_whitespace, &is_form_feed);
-        self.key.boolean_bitor_assign(&mut is_whitespace, &is_carriage_return);
+        self.key
+            .boolean_bitor_assign(&mut is_whitespace, &is_new_line);
+        self.key
+            .boolean_bitor_assign(&mut is_whitespace, &is_form_feed);
+        self.key
+            .boolean_bitor_assign(&mut is_whitespace, &is_carriage_return);
 
         if or_null {
             let is_null = self.key.scalar_eq_parallelized(char.ciphertext(), 0u8);
@@ -130,14 +132,14 @@ impl ServerKey {
     }
 
     fn compare_and_trim<'a, I>(&self, strip_str: I, starts_with_null: bool)
-        where I: Iterator<Item = &'a mut FheAsciiChar>
+    where
+        I: Iterator<Item = &'a mut FheAsciiChar>,
     {
-
         let mut prev_was_ws = self.key.create_trivial_boolean_block(true);
         for char in strip_str {
-
             let mut is_whitespace = self.is_whitespace(char, starts_with_null);
-            self.key.boolean_bitand_assign(&mut is_whitespace, &prev_was_ws);
+            self.key
+                .boolean_bitand_assign(&mut is_whitespace, &prev_was_ws);
 
             *char.ciphertext_mut() = self.key.if_then_else_parallelized(
                 &is_whitespace,
@@ -170,25 +172,26 @@ impl ServerKey {
 
         self.compare_and_trim(result.chars_mut().iter_mut(), false);
 
-        // Result has potential nulls in the leftmost chars, so we compute the length difference before and after the
-        // trimming, and use that amount to shift the result left. This makes the result nulls be at the end
+        // Result has potential nulls in the leftmost chars, so we compute the length difference
+        // before and after the trimming, and use that amount to shift the result left. This
+        // makes the result nulls be at the end
         result.set_is_padded(true);
         if let FheStringLen::Padding(len_after_trim) = self.len(&result) {
-
             let original_str_len = match self.len(str) {
                 FheStringLen::Padding(enc_val) => enc_val,
-                FheStringLen::NoPadding(val) => {
-                    self.key.create_trivial_radix(val as u32, 16)
-                }
+                FheStringLen::NoPadding(val) => self.key.create_trivial_radix(val as u32, 16),
             };
 
-            let shift_left = self.key.sub_parallelized(&original_str_len, &len_after_trim);
+            let shift_left = self
+                .key
+                .sub_parallelized(&original_str_len, &len_after_trim);
 
             result = self.left_shift_chars(&result, &shift_left);
         }
 
-        // If str was not padded originally we don't know if result has nulls at the end or not (we don't know if str
-        // was shifted or not) so we ensure it's padded in order to be used in other functions safely
+        // If str was not padded originally we don't know if result has nulls at the end or not (we
+        // don't know if str was shifted or not) so we ensure it's padded in order to be
+        // used in other functions safely
         if !str.is_padded() {
             result.append_null(self);
         } else {
@@ -221,8 +224,9 @@ impl ServerKey {
 
         self.compare_and_trim(result.chars_mut().iter_mut().rev(), include_null);
 
-        // If str was originally non padded, the result is now potentially padded as we may have made the last chars
-        // null, so we ensure it's padded in order to be used as input to other functions safely
+        // If str was originally non padded, the result is now potentially padded as we may have
+        // made the last chars null, so we ensure it's padded in order to be used as input
+        // to other functions safely
         if !str.is_padded() {
             result.append_null(self);
         }

@@ -1,14 +1,16 @@
-use std::time::Instant;
-use clap::{Arg, Command, value_parser};
 use crate::ciphertext::{FheString, UIntArg};
 use crate::client_key::ClientKey;
-use crate::server_key::{FheStringIsEmpty, FheStringIterator, FheStringLen, gen_keys, ServerKey};
+use crate::server_key::{gen_keys, FheStringIsEmpty, FheStringIterator, FheStringLen, ServerKey};
+use clap::{value_parser, Arg, Command};
+use std::time::Instant;
 
 mod ciphertext;
 mod client_key;
 mod server_key;
 
 mod assert_functions;
+
+const N: usize = 4;
 
 fn main() {
     let matches = Command::new("FHE str API")

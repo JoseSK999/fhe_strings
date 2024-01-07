@@ -2,6 +2,87 @@
 mod test_vectors;
 
 use super::*;
+use crate::ciphertext::{ClearString, GenericPattern};
+use std::time::Duration;
+
+fn result_message<T>(str: &str, expected: T, dec: T, dur: Duration)
+where
+    T: std::fmt::Debug,
+{
+    println!(
+        "\x1b[1;32m--------------------------------\x1b[0m\n\
+        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+        \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+        \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+        \x1b[1;32m--------------------------------\x1b[0m",
+        str, expected, dec, dur,
+    );
+}
+
+fn result_message_pat<T>(str: &str, pat: &str, expected: T, dec: T, dur: Duration)
+where
+    T: std::fmt::Debug,
+{
+    println!(
+        "\x1b[1;32m--------------------------------\x1b[0m\n\
+        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+        \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+        \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+        \x1b[1;32m--------------------------------\x1b[0m",
+        str, pat, expected, dec, dur,
+    );
+}
+
+fn result_message_clear_pat<T>(str: &str, pat: &str, expected: T, dec: T, dur: Duration)
+where
+    T: std::fmt::Debug,
+{
+    println!(
+        "\x1b[1;32m--------------------------------\x1b[0m\n\
+        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mPattern (clear): \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+        \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+        \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+        \x1b[1;32m--------------------------------\x1b[0m",
+        str, pat, expected, dec, dur,
+    );
+}
+
+fn result_message_rhs<T>(str: &str, pat: &str, expected: T, dec: T, dur: Duration)
+where
+    T: std::fmt::Debug,
+{
+    println!(
+        "\x1b[1;32m--------------------------------\x1b[0m\n\
+        \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+        \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+        \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+        \x1b[1;32m--------------------------------\x1b[0m",
+        str, pat, expected, dec, dur,
+    );
+}
+
+fn result_message_clear_rhs<T>(str: &str, pat: &str, expected: T, dec: T, dur: Duration)
+where
+    T: std::fmt::Debug,
+{
+    println!(
+        "\x1b[1;32m--------------------------------\x1b[0m\n\
+        \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mRhs (clear): \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+        \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+        \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+        \x1b[1;32m--------------------------------\x1b[0m",
+        str, pat, expected, dec, dur,
+    );
+}
 
 impl Keys {
     pub fn assert_len(&self, str: &str, str_pad: Option<u32>) {
@@ -18,16 +99,8 @@ impl Keys {
             FheStringLen::Padding(enc_len) => self.ck.key().decrypt_radix::<u32>(&enc_len) as usize,
         };
 
-        println!(
-            "\n\x1b[1;37;1mLen:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mLen:\x1b[0m");
+        result_message(str, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -46,25 +119,24 @@ impl Keys {
             FheStringIsEmpty::Padding(enc_len) => self.ck.key().decrypt_bool(&enc_len),
         };
 
-        println!(
-            "\n\x1b[1;37;1mIs_empty:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mIs_empty:\x1b[0m");
+        result_message(str, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
 
-    pub fn assert_contains(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_contains(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let expected = str.contains(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
 
         let start = Instant::now();
         let result = self.sk.contains(&enc_str, &enc_pat);
@@ -72,26 +144,35 @@ impl Keys {
 
         let dec = self.ck.key().decrypt_bool(&result);
 
-        println!(
-            "\n\x1b[1;37;1mContains:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mContains:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let result = self.sk.contains(&enc_str, &clear_pat);
+        let end = Instant::now();
+
+        let dec = self.ck.key().decrypt_bool(&result);
+
+        println!("\n\x1b[1mContains:\x1b[0m");
+        result_message_clear_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
 
-    pub fn assert_ends_with(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_ends_with(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let expected = str.ends_with(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
 
         let start = Instant::now();
         let result = self.sk.ends_with(&enc_str, &enc_pat);
@@ -99,26 +180,35 @@ impl Keys {
 
         let dec = self.ck.key().decrypt_bool(&result);
 
-        println!(
-            "\n\x1b[1;37;1mEnds_with:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mEnds_with:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let result = self.sk.ends_with(&enc_str, &clear_pat);
+        let end = Instant::now();
+
+        let dec = self.ck.key().decrypt_bool(&result);
+
+        println!("\n\x1b[1mEnds_with:\x1b[0m");
+        result_message_clear_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
 
-    pub fn assert_starts_with(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_starts_with(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let expected = str.starts_with(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
 
         let start = Instant::now();
         let result = self.sk.starts_with(&enc_str, &enc_pat);
@@ -126,17 +216,19 @@ impl Keys {
 
         let dec = self.ck.key().decrypt_bool(&result);
 
-        println!(
-            "\n\x1b[1;37;1mStarts_with:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mStarts_with:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let result = self.sk.starts_with(&enc_str, &clear_pat);
+        let end = Instant::now();
+
+        let dec = self.ck.key().decrypt_bool(&result);
+
+        println!("\n\x1b[1mStarts_with:\x1b[0m");
+        result_message_clear_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -145,7 +237,8 @@ impl Keys {
         let expected = str.find(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
 
         let start = Instant::now();
         let (index, is_some) = self.sk.find(&enc_str, &enc_pat);
@@ -154,19 +247,24 @@ impl Keys {
         let dec_index = self.ck.key().decrypt_radix::<u32>(&index);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
-        let dec = if dec_is_some { Some(dec_index as usize) } else { None };
+        let dec = dec_is_some.then_some(dec_index as usize);
 
-        println!(
-            "\n\x1b[1;37;1mFind:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mFind:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let (index, is_some) = self.sk.find(&enc_str, &clear_pat);
+        let end = Instant::now();
+
+        let dec_index = self.ck.key().decrypt_radix::<u32>(&index);
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
+
+        let dec = dec_is_some.then_some(dec_index as usize);
+
+        println!("\n\x1b[1mFind:\x1b[0m");
+        result_message_clear_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -175,7 +273,8 @@ impl Keys {
         let expected = str.rfind(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
 
         let start = Instant::now();
         let (index, is_some) = self.sk.rfind(&enc_str, &enc_pat);
@@ -184,28 +283,40 @@ impl Keys {
         let dec_index = self.ck.key().decrypt_radix::<u32>(&index);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
-        let dec = if dec_is_some { Some(dec_index as usize) } else { None };
+        let dec = dec_is_some.then_some(dec_index as usize);
 
-        println!(
-            "\n\x1b[1;37;1mRfind:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mRfind:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let (index, is_some) = self.sk.rfind(&enc_str, &clear_pat);
+        let end = Instant::now();
+
+        let dec_index = self.ck.key().decrypt_radix::<u32>(&index);
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
+
+        let dec = dec_is_some.then_some(dec_index as usize);
+
+        println!("\n\x1b[1mRfind:\x1b[0m");
+        result_message_clear_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
 
-    pub fn assert_strip_prefix(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_strip_prefix(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let expected = str.strip_prefix(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
 
         let start = Instant::now();
         let (result, is_some) = self.sk.strip_prefix(&enc_str, &enc_pat);
@@ -214,28 +325,40 @@ impl Keys {
         let dec_result = self.ck.decrypt_ascii(&result);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
-        let dec = if dec_is_some { Some(dec_result.as_str()) } else { None };
+        let dec = dec_is_some.then_some(dec_result.as_str());
 
-        println!(
-            "\n\x1b[1;37;1mStrip_prefix:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mStrip_prefix:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let (result, is_some) = self.sk.strip_prefix(&enc_str, &clear_pat);
+        let end = Instant::now();
+
+        let dec_result = self.ck.decrypt_ascii(&result);
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
+
+        let dec = dec_is_some.then_some(dec_result.as_str());
+
+        println!("\n\x1b[1mStrip_prefix:\x1b[0m");
+        result_message_clear_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
 
-    pub fn assert_strip_suffix(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_strip_suffix(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let expected = str.strip_suffix(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
 
         let start = Instant::now();
         let (result, is_some) = self.sk.strip_suffix(&enc_str, &enc_pat);
@@ -244,28 +367,40 @@ impl Keys {
         let dec_result = self.ck.decrypt_ascii(&result);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
-        let dec = if dec_is_some { Some(dec_result.as_str()) } else { None };
+        let dec = dec_is_some.then_some(dec_result.as_str());
 
-        println!(
-            "\n\x1b[1;37;1mStrip_suffix:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mStrip_suffix:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let (result, is_some) = self.sk.strip_suffix(&enc_str, &clear_pat);
+        let end = Instant::now();
+
+        let dec_result = self.ck.decrypt_ascii(&result);
+        let dec_is_some = self.ck.key().decrypt_bool(&is_some);
+
+        let dec = dec_is_some.then_some(dec_result.as_str());
+
+        println!("\n\x1b[1mStrip_suffix:\x1b[0m");
+        result_message_clear_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
 
-    pub fn assert_eq_ignore_case(&self, str: &str, str_pad: Option<u32>, rhs: &str, rhs_pad: Option<u32>) {
+    pub fn assert_eq_ignore_case(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        rhs: &str,
+        rhs_pad: Option<u32>,
+    ) {
         let expected = str.eq_ignore_ascii_case(rhs);
 
         let enc_lhs = FheString::new(&self.ck, str, str_pad);
-        let enc_rhs = FheString::new(&self.ck, rhs, rhs_pad);
+        let enc_rhs = GenericPattern::Enc(FheString::new(&self.ck, rhs, rhs_pad));
+        let clear_rhs = GenericPattern::Clear(ClearString::new(rhs.to_string()));
 
         let start = Instant::now();
         let result = self.sk.eq_ignore_case(&enc_lhs, &enc_rhs);
@@ -273,24 +408,27 @@ impl Keys {
 
         let dec = self.ck.key().decrypt_bool(&result);
 
-        println!(
-            "\n\x1b[1;37;1mEq_ignore_case:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, rhs, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mEq_ignore_case:\x1b[0m");
+        result_message_rhs(str, rhs, expected, dec, end.duration_since(start));
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let result = self.sk.eq_ignore_case(&enc_lhs, &clear_rhs);
+        let end = Instant::now();
+
+        let dec = self.ck.key().decrypt_bool(&result);
+
+        println!("\n\x1b[1mEq_ignore_case:\x1b[0m");
+        result_message_clear_rhs(str, rhs, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
 
     pub fn assert_comp(&self, str: &str, str_pad: Option<u32>, rhs: &str, rhs_pad: Option<u32>) {
         let enc_lhs = FheString::new(&self.ck, str, str_pad);
-        let enc_rhs = FheString::new(&self.ck, rhs, rhs_pad);
+        let enc_rhs = GenericPattern::Enc(FheString::new(&self.ck, rhs, rhs_pad));
+        let clear_rhs = GenericPattern::Clear(ClearString::new(rhs.to_string()));
 
         // Equal
         let expected_eq = str == rhs;
@@ -301,17 +439,19 @@ impl Keys {
 
         let dec_eq = self.ck.key().decrypt_bool(&result_eq);
 
-        println!(
-            "\n\x1b[1;37;1mEq:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, rhs, expected_eq, dec_eq, end.duration_since(start)
-        );
+        println!("\n\x1b[1mEq:\x1b[0m");
+        result_message_rhs(str, rhs, expected_eq, dec_eq, end.duration_since(start));
+        assert_eq!(dec_eq, expected_eq);
+
+        // Clear rhs
+        let start = Instant::now();
+        let result_eq = self.sk.eq(&enc_lhs, &clear_rhs);
+        let end = Instant::now();
+
+        let dec_eq = self.ck.key().decrypt_bool(&result_eq);
+
+        println!("\n\x1b[1mEq:\x1b[0m");
+        result_message_clear_rhs(str, rhs, expected_eq, dec_eq, end.duration_since(start));
         assert_eq!(dec_eq, expected_eq);
 
         // Not equal
@@ -323,18 +463,22 @@ impl Keys {
 
         let dec_ne = self.ck.key().decrypt_bool(&result_ne);
 
-        println!(
-            "\n\x1b[1;37;1mNe:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, rhs, expected_ne, dec_ne, end.duration_since(start)
-        );
+        println!("\n\x1b[1mNe:\x1b[0m");
+        result_message_rhs(str, rhs, expected_ne, dec_ne, end.duration_since(start));
         assert_eq!(dec_ne, expected_ne);
+
+        // Clear rhs
+        let start = Instant::now();
+        let result_ne = self.sk.ne(&enc_lhs, &clear_rhs);
+        let end = Instant::now();
+
+        let dec_ne = self.ck.key().decrypt_bool(&result_ne);
+
+        println!("\n\x1b[1mNe:\x1b[0m");
+        result_message_clear_rhs(str, rhs, expected_ne, dec_ne, end.duration_since(start));
+        assert_eq!(dec_ne, expected_ne);
+
+        let enc_rhs = FheString::new(&self.ck, rhs, rhs_pad);
 
         // Greater or equal
         let expected_ge = str >= rhs;
@@ -345,17 +489,8 @@ impl Keys {
 
         let dec_ge = self.ck.key().decrypt_bool(&result_ge);
 
-        println!(
-            "\n\x1b[1;37;1mGe:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, rhs, expected_ge, dec_ge, end.duration_since(start)
-        );
+        println!("\n\x1b[1mGe:\x1b[0m");
+        result_message_rhs(str, rhs, expected_ge, dec_ge, end.duration_since(start));
         assert_eq!(dec_ge, expected_ge);
 
         // Less or equal
@@ -367,17 +502,8 @@ impl Keys {
 
         let dec_le = self.ck.key().decrypt_bool(&result_le);
 
-        println!(
-            "\n\x1b[1;37;1mLe:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, rhs, expected_le, dec_le, end.duration_since(start)
-        );
+        println!("\n\x1b[1mLe:\x1b[0m");
+        result_message_rhs(str, rhs, expected_le, dec_le, end.duration_since(start));
         assert_eq!(dec_le, expected_le);
 
         // Greater than
@@ -389,17 +515,8 @@ impl Keys {
 
         let dec_gt = self.ck.key().decrypt_bool(&result_gt);
 
-        println!(
-            "\n\x1b[1;37;1mGt:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, rhs, expected_gt, dec_gt, end.duration_since(start)
-        );
+        println!("\n\x1b[1mGt:\x1b[0m");
+        result_message_rhs(str, rhs, expected_gt, dec_gt, end.duration_since(start));
         assert_eq!(dec_gt, expected_gt);
 
         // Less than
@@ -411,17 +528,8 @@ impl Keys {
 
         let dec_lt = self.ck.key().decrypt_bool(&result_lt);
 
-        println!(
-            "\n\x1b[1;37;1mLt:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, rhs, expected_lt, dec_lt, end.duration_since(start)
-        );
+        println!("\n\x1b[1mLt:\x1b[0m");
+        result_message_rhs(str, rhs, expected_lt, dec_lt, end.duration_since(start));
         assert_eq!(dec_lt, expected_lt);
     }
 
@@ -436,16 +544,8 @@ impl Keys {
 
         let dec = self.ck.decrypt_ascii(&result);
 
-        println!(
-            "\n\x1b[1;37;1mTo_lowercase:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mTo_lowercase:\x1b[0m");
+        result_message(str, &expected, &dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -461,16 +561,8 @@ impl Keys {
 
         let dec = self.ck.decrypt_ascii(&result);
 
-        println!(
-            "\n\x1b[1;37;1mTo_uppercase:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mTo_upperrcase:\x1b[0m");
+        result_message(str, &expected, &dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -487,17 +579,8 @@ impl Keys {
 
         let dec = self.ck.decrypt_ascii(&result);
 
-        println!(
-            "\n\x1b[1;37;1mConcat (+):\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, rhs, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mConcat (+):\x1b[0m");
+        result_message_rhs(str, rhs, &expected, &dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -515,14 +598,19 @@ impl Keys {
         let dec = self.ck.decrypt_ascii(&result);
 
         println!(
-            "\n\x1b[1;37;1mRepeat:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}",
-            str, n, expected, dec, end.duration_since(start)
+            "\n\x1b[1mRepeat:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
+            str,
+            n,
+            expected,
+            dec,
+            end.duration_since(start),
         );
         assert_eq!(dec, expected);
 
@@ -536,13 +624,19 @@ impl Keys {
         let dec = self.ck.decrypt_ascii(&result);
 
         println!(
-            "\n\x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, n, expected, dec, end.duration_since(start)
+            "\n\x1b[1mRepeat:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
+            str,
+            n,
+            expected,
+            dec,
+            end.duration_since(start),
         );
         assert_eq!(dec, expected);
     }
@@ -558,16 +652,8 @@ impl Keys {
 
         let dec = self.ck.decrypt_ascii(&result);
 
-        println!(
-            "\n\x1b[1;37;1mTrim_end:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mTrim_end:\x1b[0m");
+        result_message(str, expected, &dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -583,16 +669,8 @@ impl Keys {
 
         let dec = self.ck.decrypt_ascii(&result);
 
-        println!(
-            "\n\x1b[1;37;1mTrim_start:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mTrim_start:\x1b[0m");
+        result_message(str, expected, &dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -608,16 +686,8 @@ impl Keys {
 
         let dec = self.ck.decrypt_ascii(&result);
 
-        println!(
-            "\n\x1b[1;37;1mTrim:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mTrim:\x1b[0m");
+        result_message(str, expected, &dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -634,15 +704,15 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.split_ascii_whitespace(&enc_str);
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results
-        let dec: Vec<_> = results.iter().map(|result| {
-            self.ck.decrypt_ascii(result)
-        }).collect();
+        let dec: Vec<_> = results
+            .iter()
+            .map(|result| self.ck.decrypt_ascii(result))
+            .collect();
 
         // Split_ascii_whitespace returns "" in the None case (temporarily)
         assert_eq!(dec.last().unwrap(), "");
@@ -656,25 +726,23 @@ impl Keys {
             }
         }
 
-        println!(
-            "\n\x1b[1;37;1mSplit_ascii_whitespace:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, expected, dec_option, end.duration_since(start)
-        );
+        println!("\n\x1b[1mSplit_ascii_whitespace:\x1b[0m");
+        result_message(str, &expected, &dec_option, end.duration_since(start));
 
         assert_eq!(dec_option, expected);
     }
 
-    pub fn assert_split_once(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_split_once(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let expected = str.split_once(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let start = Instant::now();
         let (lhs, rhs, is_some) = self.sk.split_once(&enc_str, &enc_pat);
@@ -684,28 +752,25 @@ impl Keys {
         let dec_rhs = self.ck.decrypt_ascii(&rhs);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
-        let dec = if dec_is_some { Some((dec_lhs.as_str(), dec_rhs.as_str())) } else { None };
+        let dec = dec_is_some.then_some((dec_lhs.as_str(), dec_rhs.as_str()));
 
-        println!(
-            "\n\x1b[1;37;1mSplit_once:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mSplit_once:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
 
-    pub fn assert_rsplit_once(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_rsplit_once(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let expected = str.rsplit_once(pat);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let start = Instant::now();
         let (lhs, rhs, is_some) = self.sk.rsplit_once(&enc_str, &enc_pat);
@@ -715,19 +780,10 @@ impl Keys {
         let dec_rhs = self.ck.decrypt_ascii(&rhs);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
 
-        let dec = if dec_is_some { Some((dec_lhs.as_str(), dec_rhs.as_str())) } else { None };
+        let dec = dec_is_some.then_some((dec_lhs.as_str(), dec_rhs.as_str()));
 
-        println!(
-            "\n\x1b[1;37;1mRsplit_once:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
+        println!("\n\x1b[1mRsplit_once:\x1b[0m");
+        result_message_pat(str, pat, expected, dec, end.duration_since(start));
 
         assert_eq!(dec, expected);
     }
@@ -737,7 +793,7 @@ impl Keys {
         expected.push(None);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let mut results = Vec::with_capacity(expected.len());
 
@@ -745,37 +801,27 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.split(&enc_str, &enc_pat);
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some {
-                Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
-        println!(
-            "\n\x1b[1;37;1mSplit:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
-
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
+
+        println!("\n\x1b[1mSplit:\x1b[0m");
+        result_message_pat(str, pat, &expected, &dec_as_str, end.duration_since(start));
 
         assert_eq!(dec_as_str, expected);
     }
@@ -785,7 +831,7 @@ impl Keys {
         expected.push(None);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let mut results = Vec::with_capacity(expected.len());
 
@@ -793,47 +839,43 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.rsplit(&enc_str, &enc_pat);
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some {
-                Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
-        println!(
-            "\n\x1b[1;37;1mRsplit:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
-
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
+
+        println!("\n\x1b[1mRsplit:\x1b[0m");
+        result_message_pat(str, pat, &expected, &dec_as_str, end.duration_since(start));
 
         assert_eq!(dec_as_str, expected);
     }
 
-    pub fn assert_split_terminator(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_split_terminator(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let mut expected: Vec<_> = str.split_terminator(pat).map(Some).collect();
         expected.push(None);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let mut results = Vec::with_capacity(expected.len());
 
@@ -841,47 +883,43 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.split_terminator(&enc_str, &enc_pat);
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some {
-                Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
-        println!(
-            "\n\x1b[1;37;1mSplit_terminator:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
-
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
+
+        println!("\n\x1b[1mSplit_terminator:\x1b[0m");
+        result_message_pat(str, pat, &expected, &dec_as_str, end.duration_since(start));
 
         assert_eq!(dec_as_str, expected);
     }
 
-    pub fn assert_rsplit_terminator(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_rsplit_terminator(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let mut expected: Vec<_> = str.rsplit_terminator(pat).map(Some).collect();
         expected.push(None);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let mut results = Vec::with_capacity(expected.len());
 
@@ -889,47 +927,43 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.rsplit_terminator(&enc_str, &enc_pat);
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some {
-                Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
-        println!(
-            "\n\x1b[1;37;1mRsplit_terminator:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
-
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
+
+        println!("\n\x1b[1mRsplit_terminator:\x1b[0m");
+        result_message_pat(str, pat, &expected, &dec_as_str, end.duration_since(start));
 
         assert_eq!(dec_as_str, expected);
     }
 
-    pub fn assert_split_inclusive(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>) {
+    pub fn assert_split_inclusive(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+    ) {
         let mut expected: Vec<_> = str.split_inclusive(pat).map(Some).collect();
         expected.push(None);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let mut results = Vec::with_capacity(expected.len());
 
@@ -937,47 +971,45 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.split_inclusive(&enc_str, &enc_pat);
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some {
-                Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
-        println!(
-            "\n\x1b[1;37;1mSplit_inclusive:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, expected, dec, end.duration_since(start)
-        );
-
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
+
+        println!("\n\x1b[1mSplit_inclusive:\x1b[0m");
+        result_message_pat(str, pat, &expected, &dec_as_str, end.duration_since(start));
 
         assert_eq!(dec_as_str, expected);
     }
 
-    pub fn assert_splitn(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>, n: u16, max: u16) {
+    pub fn assert_splitn(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+        n: u16,
+        max: u16,
+    ) {
         let mut expected: Vec<_> = str.splitn(n as usize, pat).map(Some).collect();
         expected.push(None);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let mut results = Vec::with_capacity(expected.len());
 
@@ -985,34 +1017,40 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.splitn(&enc_str, &enc_pat, UIntArg::Clear(n));
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some { Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
         println!(
-            "\n\x1b[1;37;1mSplitn:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}",
-            str, pat, n, expected, dec, end.duration_since(start)
+            "\n\x1b[1mSplitn:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
+            str,
+            pat,
+            n,
+            expected,
+            dec,
+            end.duration_since(start),
         );
 
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
 
@@ -1025,46 +1063,60 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.splitn(&enc_str, &enc_pat, UIntArg::Enc(enc_n));
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some {
-                Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
         println!(
-            "\n\x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, n, expected, dec, end.duration_since(start)
+            "\n\x1b[1mSplitn:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
+            str,
+            pat,
+            n,
+            expected,
+            dec,
+            end.duration_since(start),
         );
 
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
 
         assert_eq!(dec_as_str, expected);
     }
 
-    pub fn assert_rsplitn(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>, n: u16, max: u16) {
+    pub fn assert_rsplitn(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+        n: u16,
+        max: u16,
+    ) {
         let mut expected: Vec<_> = str.rsplitn(n as usize, pat).map(Some).collect();
         expected.push(None);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
 
         let mut results = Vec::with_capacity(expected.len());
 
@@ -1072,34 +1124,40 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.rsplitn(&enc_str, &enc_pat, UIntArg::Clear(n));
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some { Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
         println!(
-            "\n\x1b[1;37;1mRsplitn:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}",
-            str, pat, n, expected, dec, end.duration_since(start)
+            "\n\x1b[1mRsplitn:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
+            str,
+            pat,
+            n,
+            expected,
+            dec,
+            end.duration_since(start),
         );
 
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
 
@@ -1112,45 +1170,60 @@ impl Keys {
         let start = Instant::now();
         let mut split_iter = self.sk.rsplitn(&enc_str, &enc_pat, UIntArg::Enc(enc_n));
         for _ in 0..expected.len() {
-
             results.push(split_iter.next(&self.sk))
         }
         let end = Instant::now();
 
         // Collect the decrypted results properly
-        let dec: Vec<_> = results.iter().map(|(result, is_some)| {
-            let dec_is_some = self.ck.key().decrypt_bool(is_some);
+        let dec: Vec<_> = results
+            .iter()
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
 
-            if dec_is_some {
-                Some(self.ck.decrypt_ascii(result))
-            } else {
-                None
-            }
-        }).collect();
+                dec_is_some.then_some(self.ck.decrypt_ascii(result))
+            })
+            .collect();
 
         println!(
-            "\n\x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, n, expected, dec, end.duration_since(start)
+            "\n\x1b[1mRsplitn:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
+            str,
+            pat,
+            n,
+            expected,
+            dec,
+            end.duration_since(start),
         );
 
-        let dec_as_str: Vec<_> = dec.iter()
+        let dec_as_str: Vec<_> = dec
+            .iter()
             .map(|option| option.as_ref().map(|s| s.as_str()))
             .collect();
 
         assert_eq!(dec_as_str, expected);
     }
 
-    pub fn assert_replace(&self, str: &str, str_pad: Option<u32>, pat: &str, pat_pad: Option<u32>, to: &str, to_pad: Option<u32>) {
+    pub fn assert_replace(
+        &self,
+        str: &str,
+        str_pad: Option<u32>,
+        pat: &str,
+        pat_pad: Option<u32>,
+        to: &str,
+        to_pad: Option<u32>,
+    ) {
         let expected = str.replace(pat, to);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
         let enc_to = FheString::new(&self.ck, to, to_pad);
 
         let start = Instant::now();
@@ -1160,22 +1233,60 @@ impl Keys {
         let dec = self.ck.decrypt_ascii(&result);
 
         println!(
-            "\n\x1b[1;37;1mReplace:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, to, expected, dec, end.duration_since(start)
+            "\n\x1b[1mReplace:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
+            str,
+            pat,
+            to,
+            expected,
+            dec,
+            end.duration_since(start),
+        );
+
+        assert_eq!(dec, expected);
+
+        let start = Instant::now();
+        let result = self.sk.replace(&enc_str, &clear_pat, &enc_to);
+        let end = Instant::now();
+
+        let dec = self.ck.decrypt_ascii(&result);
+
+        println!(
+            "\n\x1b[1mReplace:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mFrom (clear): \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
+            str,
+            pat,
+            to,
+            expected,
+            dec,
+            end.duration_since(start),
         );
 
         assert_eq!(dec, expected);
     }
 
-    pub fn assert_replacen(&self, str: (&str, Option<u32>), pat: (&str, Option<u32>), to: (&str, Option<u32>), n: u16, max: u16) {
+    pub fn assert_replacen(
+        &self,
+        str: (&str, Option<u32>),
+        pat: (&str, Option<u32>),
+        to: (&str, Option<u32>),
+        n: u16,
+        max: u16,
+    ) {
         let (str, str_pad) = (str.0, str.1);
         let (pat, pat_pad) = (pat.0, pat.1);
         let (to, to_pad) = (to.0, to.1);
@@ -1183,47 +1294,62 @@ impl Keys {
         let expected = str.replacen(pat, to, n as usize);
 
         let enc_str = FheString::new(&self.ck, str, str_pad);
-        let enc_pat = FheString::new(&self.ck, pat, pat_pad);
+        let enc_pat = GenericPattern::Enc(FheString::new(&self.ck, pat, pat_pad));
+        let clear_pat = GenericPattern::Clear(ClearString::new(pat.to_string()));
         let enc_to = FheString::new(&self.ck, to, to_pad);
 
+        let clear_n = UIntArg::Clear(n);
+        let enc_n = UIntArg::Enc(self.ck.encrypt_u16(n, Some(max)));
+
         let start = Instant::now();
-        let result = self.sk.replacen(&enc_str, &enc_pat, &enc_to, &UIntArg::Clear(n));
+        let result = self.sk.replacen(&enc_str, &enc_pat, &enc_to, &clear_n);
         let end = Instant::now();
 
         let dec = self.ck.decrypt_ascii(&result);
 
         println!(
-            "\n\x1b[1;37;1mReplacen:\x1b[0m\n\
-    \x1b[1;32m--------------------------------\x1b[0m\n\
-    \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}",
-            str, pat, to, n, expected, dec, end.duration_since(start)
+            "\n\x1b[1mReplacen:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}",
+            str,
+            pat,
+            to,
+            n,
+            expected,
+            dec,
+            end.duration_since(start),
         );
         assert_eq!(dec, expected);
 
-        let enc_n = self.ck.encrypt_u16(n, Some(max));
-
         let start = Instant::now();
-        let result = self.sk.replacen(&enc_str, &enc_pat, &enc_to, &UIntArg::Enc(enc_n));
+        let result = self.sk.replacen(&enc_str, &clear_pat, &enc_to, &enc_n);
         let end = Instant::now();
 
         let dec = self.ck.decrypt_ascii(&result);
 
         println!(
-            "\n\x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-    \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
-    \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
-    \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-    \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
-    \x1b[1;32m--------------------------------\x1b[0m",
-            str, pat, to, n, expected, dec, end.duration_since(start)
+            "\n\x1b[1mReplacen:\x1b[0m\n\
+            \x1b[1;32m--------------------------------\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mFrom (clear): \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
+            \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
+            \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
+            \x1b[1;34mExecution Time: \x1b[0m{:?}",
+            str,
+            pat,
+            to,
+            n,
+            expected,
+            dec,
+            end.duration_since(start),
         );
         assert_eq!(dec, expected);
     }
