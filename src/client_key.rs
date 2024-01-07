@@ -97,7 +97,6 @@ impl ClientKey {
             .iter()
             .filter_map(|enc_char| {
                 let byte = self.key.decrypt_radix(enc_char.ciphertext());
-                print!(" {}", byte);
 
                 if byte == 0 {
                     prev_was_null = true;
@@ -116,7 +115,6 @@ impl ClientKey {
                 }
             })
             .collect();
-        println!();
 
         if padded_flag {
             assert!(

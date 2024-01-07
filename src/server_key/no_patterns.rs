@@ -149,10 +149,8 @@ impl ServerKey {
             .for_each(|(char, is_lowercase)| {
                 let mut subtract = self.key.create_trivial_radix(32, 4);
 
-                self.key.mul_assign_parallelized(
-                    &mut subtract,
-                    &is_lowercase.into_radix(1, &self.key),
-                );
+                self.key
+                    .mul_assign_parallelized(&mut subtract, &is_lowercase.into_radix(1, &self.key));
 
                 self.key
                     .sub_assign_parallelized(char.ciphertext_mut(), &subtract);
@@ -202,10 +200,8 @@ impl ServerKey {
             .for_each(|(char, is_uppercase)| {
                 let mut add = self.key.create_trivial_radix(32, 4);
 
-                self.key.mul_assign_parallelized(
-                    &mut add,
-                    &is_uppercase.into_radix(1, &self.key),
-                );
+                self.key
+                    .mul_assign_parallelized(&mut add, &is_uppercase.into_radix(1, &self.key));
 
                 self.key
                     .add_assign_parallelized(char.ciphertext_mut(), &add);

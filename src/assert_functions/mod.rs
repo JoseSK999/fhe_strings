@@ -11,7 +11,7 @@ where
 {
     println!(
         "\x1b[1;32m--------------------------------\x1b[0m\n\
-        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
         \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
         \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
         \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
@@ -26,8 +26,8 @@ where
 {
     println!(
         "\x1b[1;32m--------------------------------\x1b[0m\n\
-        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-        \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+        \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
         \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
         \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
         \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
@@ -42,8 +42,8 @@ where
 {
     println!(
         "\x1b[1;32m--------------------------------\x1b[0m\n\
-        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-        \x1b[1;32;1mPattern (clear): \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+        \x1b[1;32;1mPattern (clear): \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
         \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
         \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
         \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
@@ -58,8 +58,8 @@ where
 {
     println!(
         "\x1b[1;32m--------------------------------\x1b[0m\n\
-        \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-        \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+        \x1b[1;32;1mRhs: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
         \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
         \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
         \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
@@ -74,8 +74,8 @@ where
 {
     println!(
         "\x1b[1;32m--------------------------------\x1b[0m\n\
-        \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-        \x1b[1;32;1mRhs (clear): \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+        \x1b[1;32;1mLhs: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+        \x1b[1;32;1mRhs (clear): \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
         \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
         \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
         \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
@@ -324,6 +324,10 @@ impl Keys {
 
         let dec_result = self.ck.decrypt_ascii(&result);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
+        if !dec_is_some {
+            // When it's None, the FheString returned is the original str
+            assert_eq!(dec_result, str);
+        }
 
         let dec = dec_is_some.then_some(dec_result.as_str());
 
@@ -338,6 +342,10 @@ impl Keys {
 
         let dec_result = self.ck.decrypt_ascii(&result);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
+        if !dec_is_some {
+            // When it's None, the FheString returned is the original str
+            assert_eq!(dec_result, str);
+        }
 
         let dec = dec_is_some.then_some(dec_result.as_str());
 
@@ -366,6 +374,10 @@ impl Keys {
 
         let dec_result = self.ck.decrypt_ascii(&result);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
+        if !dec_is_some {
+            // When it's None, the FheString returned is the original str
+            assert_eq!(dec_result, str);
+        }
 
         let dec = dec_is_some.then_some(dec_result.as_str());
 
@@ -380,6 +392,10 @@ impl Keys {
 
         let dec_result = self.ck.decrypt_ascii(&result);
         let dec_is_some = self.ck.key().decrypt_bool(&is_some);
+        if !dec_is_some {
+            // When it's None, the FheString returned is the original str
+            assert_eq!(dec_result, str);
+        }
 
         let dec = dec_is_some.then_some(dec_result.as_str());
 
@@ -600,7 +616,7 @@ impl Keys {
         println!(
             "\n\x1b[1mRepeat:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
@@ -626,7 +642,7 @@ impl Keys {
         println!(
             "\n\x1b[1mRepeat:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
@@ -708,28 +724,30 @@ impl Keys {
         }
         let end = Instant::now();
 
-        // Collect the decrypted results
+        // Collect the decrypted results properly
         let dec: Vec<_> = results
             .iter()
-            .map(|result| self.ck.decrypt_ascii(result))
+            .map(|(result, is_some)| {
+                let dec_is_some = self.ck.key().decrypt_bool(is_some);
+                let dec_result = self.ck.decrypt_ascii(result);
+                if !dec_is_some {
+                    // When it's None, the FheString returned is always empty
+                    assert_eq!(dec_result, "");
+                }
+
+                dec_is_some.then_some(dec_result)
+            })
             .collect();
 
-        // Split_ascii_whitespace returns "" in the None case (temporarily)
-        assert_eq!(dec.last().unwrap(), "");
-
-        let mut dec_option: Vec<Option<&str>> = Vec::with_capacity(dec.len());
-        for (i, string) in dec.iter().enumerate() {
-            if i < dec.len() - 1 {
-                dec_option.push(Some(string));
-            } else {
-                dec_option.push(None);
-            }
-        }
+        let dec_as_str: Vec<_> = dec
+            .iter()
+            .map(|option| option.as_ref().map(|s| s.as_str()))
+            .collect();
 
         println!("\n\x1b[1mSplit_ascii_whitespace:\x1b[0m");
-        result_message(str, &expected, &dec_option, end.duration_since(start));
+        result_message(str, &expected, &dec_as_str, end.duration_since(start));
 
-        assert_eq!(dec_option, expected);
+        assert_eq!(dec_as_str, expected);
     }
 
     pub fn assert_split_once(
@@ -1034,8 +1052,8 @@ impl Keys {
         println!(
             "\n\x1b[1mSplitn:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
@@ -1080,8 +1098,8 @@ impl Keys {
         println!(
             "\n\x1b[1mSplitn:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
@@ -1141,8 +1159,8 @@ impl Keys {
         println!(
             "\n\x1b[1mRsplitn:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
@@ -1187,8 +1205,8 @@ impl Keys {
         println!(
             "\n\x1b[1mRsplitn:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mPattern: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
@@ -1235,9 +1253,9 @@ impl Keys {
         println!(
             "\n\x1b[1mReplace:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
             \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
@@ -1261,9 +1279,9 @@ impl Keys {
         println!(
             "\n\x1b[1mReplace:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mFrom (clear): \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mFrom (clear): \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
             \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
@@ -1310,13 +1328,14 @@ impl Keys {
         println!(
             "\n\x1b[1mReplacen:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mFrom: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mTimes (clear): \x1b[0m{}\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-            \x1b[1;34mExecution Time: \x1b[0m{:?}",
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
             str,
             pat,
             to,
@@ -1336,13 +1355,14 @@ impl Keys {
         println!(
             "\n\x1b[1mReplacen:\x1b[0m\n\
             \x1b[1;32m--------------------------------\x1b[0m\n\
-            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mFrom (clear): \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
-            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m\"{}\"\x1b[0m\n\
+            \x1b[1;32;1mString: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mFrom (clear): \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
+            \x1b[1;32;1mTo: \x1b[0m\x1b[0;33m{:?}\x1b[0m\n\
             \x1b[1;32;1mTimes (encrypted): \x1b[0m{}\n\
             \x1b[1;32;1mClear API Result: \x1b[0m{:?}\n\
             \x1b[1;32;1mT-fhe API Result: \x1b[0m{:?}\n\
-            \x1b[1;34mExecution Time: \x1b[0m{:?}",
+            \x1b[1;34mExecution Time: \x1b[0m{:?}\n\
+            \x1b[1;32m--------------------------------\x1b[0m",
             str,
             pat,
             to,

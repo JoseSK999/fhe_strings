@@ -392,7 +392,7 @@ impl ServerKey {
         }
 
         let max = self.max_matches(str, &trivial_or_enc_from);
-        println!("max {}", max);
+
         self.replace_n_times(max, &mut result, from, to, None);
 
         result

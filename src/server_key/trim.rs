@@ -1,32 +1,44 @@
 use crate::ciphertext::{FheAsciiChar, FheString};
-use crate::server_key::{FheStringLen, ServerKey};
+use crate::server_key::{FheStringIsEmpty, FheStringIterator, FheStringLen, ServerKey};
 use rayon::prelude::*;
 use tfhe::integer::BooleanBlock;
 
 pub struct SplitAsciiWhitespace {
-    initial_string: FheString,
+    state: FheString,
     current_mask: Option<FheString>,
 }
 
-impl SplitAsciiWhitespace {
-    pub fn next(&mut self, sk: &ServerKey) -> FheString {
+impl FheStringIterator for SplitAsciiWhitespace {
+    fn next(&mut self, sk: &ServerKey) -> (FheString, BooleanBlock) {
         let is_not_first_call = self.current_mask.is_some();
 
         if is_not_first_call {
             self.remaining_string(sk);
         }
 
-        self.initial_string = sk.trim_start(&self.initial_string);
+        let state_after_trim = sk.trim_start(&self.state);
+        self.state = state_after_trim.clone();
 
-        self.create_mask(sk)
+        rayon::join(
+            || self.create_and_apply_mask(sk),
+            || {
+                // If state after trim_start is empty it means the remaining string was either
+                // empty or only whitespace. Hence there are no more elements to return
+                if let FheStringIsEmpty::Padding(val) = sk.is_empty(&state_after_trim) {
+                    sk.key.boolean_bitnot(&val)
+                } else {
+                    panic!("Trim_start returns padded output")
+                }
+            },
+        )
     }
 }
 
 impl SplitAsciiWhitespace {
     // The mask contains 255u8 until we find some whitespace, then will be 0u8
-    fn create_mask(&mut self, sk: &ServerKey) -> FheString {
-        let mut mask = self.initial_string.clone();
-        let mut result = self.initial_string.clone();
+    fn create_and_apply_mask(&mut self, sk: &ServerKey) -> FheString {
+        let mut mask = self.state.clone();
+        let mut result = self.state.clone();
 
         let mut prev_was_not = sk.key.create_trivial_boolean_block(true);
         for char in mask.chars_mut().iter_mut() {
@@ -71,16 +83,16 @@ impl SplitAsciiWhitespace {
                 .add_assign_parallelized(&mut number_of_trues, &is_true.into_radix(1, &sk.key));
         }
 
-        let padded = self.initial_string.is_padded();
+        let padded = self.state.is_padded();
 
-        self.initial_string = sk.left_shift_chars(&self.initial_string, &number_of_trues);
+        self.state = sk.left_shift_chars(&self.state, &number_of_trues);
 
         if padded {
-            self.initial_string.set_is_padded(true);
+            self.state.set_is_padded(true);
         } else {
             // If it was not padded now we cannot assume it's not padded (because of the left shift)
             // so we add a null to ensure it's always padded
-            self.initial_string.append_null(sk);
+            self.state.append_null(sk);
         }
     }
 }
@@ -88,25 +100,34 @@ impl SplitAsciiWhitespace {
 impl ServerKey {
     // As specified in https://doc.rust-lang.org/core/primitive.char.html#method.is_ascii_whitespace
     fn is_whitespace(&self, char: &FheAsciiChar, or_null: bool) -> BooleanBlock {
-        let (((is_space, is_tab), (is_new_line, is_form_feed)), is_carriage_return) = rayon::join(
-            || {
-                rayon::join(
-                    || {
-                        rayon::join(
-                            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x20u8),
-                            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x09u8),
-                        )
-                    },
-                    || {
-                        rayon::join(
-                            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Au8),
-                            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Cu8),
-                        )
-                    },
-                )
-            },
-            || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Du8),
-        );
+        let (((is_space, is_tab), (is_new_line, is_form_feed)), (is_carriage_return, op_is_null)) =
+            rayon::join(
+                || {
+                    rayon::join(
+                        || {
+                            rayon::join(
+                                || self.key.scalar_eq_parallelized(char.ciphertext(), 0x20u8),
+                                || self.key.scalar_eq_parallelized(char.ciphertext(), 0x09u8),
+                            )
+                        },
+                        || {
+                            rayon::join(
+                                || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Au8),
+                                || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Cu8),
+                            )
+                        },
+                    )
+                },
+                || {
+                    rayon::join(
+                        || self.key.scalar_eq_parallelized(char.ciphertext(), 0x0Du8),
+                        || {
+                            or_null
+                                .then_some(self.key.scalar_eq_parallelized(char.ciphertext(), 0u8))
+                        },
+                    )
+                },
+            );
 
         let mut is_whitespace = self.key.boolean_bitor(&is_space, &is_tab);
         self.key
@@ -116,9 +137,7 @@ impl ServerKey {
         self.key
             .boolean_bitor_assign(&mut is_whitespace, &is_carriage_return);
 
-        if or_null {
-            let is_null = self.key.scalar_eq_parallelized(char.ciphertext(), 0u8);
-
+        if let Some(is_null) = op_is_null {
             self.key.boolean_bitor_assign(&mut is_whitespace, &is_null);
         }
 
@@ -257,11 +276,47 @@ impl ServerKey {
         result
     }
 
+    /// Creates an iterator over the substrings of this encrypted string, separated by any amount of
+    /// whitespace.
+    ///
+    /// Each call to `next` on the iterator returns a tuple with the next encrypted substring and a
+    /// boolean indicating `Some` (true) or `None` (false) when no more substrings are available.
+    ///
+    /// When the boolean is `true`, the iterator will yield non-empty encrypted substrings. When the
+    /// boolean is `false`, the returned encrypted string is always empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let (ck, sk) = gen_keys();
+    /// let s = "hello \t\nworld ";
+    ///
+    /// let enc_s = FheString::new(&ck, &s, None);
+    ///
+    /// let mut whitespace_iter = sk.split_ascii_whitespace(&enc_s);
+    /// let (first_item, first_is_some) = whitespace_iter.next(&sk);
+    /// let (second_item, second_is_some) = whitespace_iter.next(&sk);
+    /// let (empty, no_more_items) = whitespace_iter.next(&sk); // Attempting to get a third item
+    ///
+    /// let first_decrypted = ck.decrypt_ascii(&first_item);
+    /// let first_is_some = ck.key().decrypt_bool(&first_is_some);
+    /// let second_decrypted = ck.decrypt_ascii(&second_item);
+    /// let second_is_some = ck.key().decrypt_bool(&second_is_some);
+    /// let empty = ck.decrypt_ascii(&empty);
+    /// let no_more_items = ck.key().decrypt_bool(&no_more_items);
+    ///
+    /// assert_eq!(first_decrypted, "hello");
+    /// assert!(first_is_some);
+    /// assert_eq!(second_decrypted, "world");
+    /// assert!(second_is_some);
+    /// assert_eq!(empty, ""); // There are no more items so we get an empty string
+    /// assert!(!no_more_items);
+    /// ```
     pub fn split_ascii_whitespace(&self, str: &FheString) -> SplitAsciiWhitespace {
         let result = str.clone();
 
         SplitAsciiWhitespace {
-            initial_string: result,
+            state: result,
             current_mask: None,
         }
     }
