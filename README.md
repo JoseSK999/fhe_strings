@@ -1,3 +1,5 @@
+> :information_source: **NOTE:** The project was updated with BooleanBlocks and better style. It can now be found at https://github.com/JoseSK999/tfhe-rs
+
 # fhe_strings
 
 This repo contains the implementation of a str API in FHE, featuring 30 methods. This API allows the user to:
