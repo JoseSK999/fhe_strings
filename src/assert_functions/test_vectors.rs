@@ -62,30 +62,30 @@ const TEST_CASES_COMP: [(&str, u32); 15] = [
     ("foofoo44", 1),
 ];
 
-const TEST_CASES_SPLIT: [((&str, u32), (&str, u32), u32); 21] = [
+const TEST_CASES_SPLIT: [((&str, u32), (&str, u32)); 21] = [
     // Empty strings and patterns with different paddings to test edge cases
-    (("", 0), ("", 0), 3),
-    (("", 0), ("", 1), 3),
-    (("", 0), ("", 2), 3),
-    (("", 1), ("", 0), 3),
-    (("", 1), ("", 1), 3),
-    (("", 1), ("", 2), 3),
-    (("", 2), ("", 0), 3),
-    (("", 2), ("", 1), 3),
-    (("", 2), ("", 2), 3),
+    (("", 0), ("", 0)),
+    (("", 0), ("", 1)),
+    (("", 0), ("", 2)),
+    (("", 1), ("", 0)),
+    (("", 1), ("", 1)),
+    (("", 1), ("", 2)),
+    (("", 2), ("", 0)),
+    (("", 2), ("", 1)),
+    (("", 2), ("", 2)),
     // More edge cases involving the empty string and pattern
-    (("", 0), ("a", 0), 2),
-    (("", 1), ("a", 0), 2),
-    (("", 2), ("a", 0), 2),
-    (("Kikwi", 0), ("", 0), 8),
-    (("Bucha", 0), ("", 1), 8),
-    (("Yerbal", 0), ("", 2), 9),
-    (("aaa", 0), ("a", 0), 5),
-    (("aaa", 0), ("aa", 0), 3),
-    (("Deep Woods", 0), ("woods", 0), 2),
-    (("Skyview Temple", 0), ("e", 2), 5),
-    (("Lake.Floria.", 2), (".", 1), 4),
-    (("Ghirahim", 2), ("hi", 0), 4),
+    (("", 0), ("a", 0)),
+    (("", 1), ("a", 0)),
+    (("", 2), ("a", 0)),
+    (("Kikwi", 0), ("", 0)),
+    (("Bucha", 0), ("", 1)),
+    (("Yerbal", 0), ("", 2)),
+    (("aaa", 0), ("a", 0)),
+    (("aaa", 0), ("aa", 0)),
+    (("Deep Woods", 0), ("woods", 0)),
+    (("Skyview Temple", 0), ("e", 2)),
+    (("Lake.Floria.", 2), (".", 1)),
+    (("Ghirahim", 2), ("hi", 0)),
 ];
 
 const TEST_CASES_REPLACE: [((&str, u32), (&str, u32), (&str, u32)); 27] = [
@@ -326,7 +326,7 @@ fn test_split_once() {
 fn test_rsplit_real() {
     let keys = Keys::new();
 
-    for ((str, str_pad), (pat, pat_pad), _) in TEST_CASES_SPLIT {
+    for ((str, str_pad), (pat, pat_pad)) in TEST_CASES_SPLIT {
         keys.assert_rsplit(str, Some(str_pad), pat, Some(pat_pad));
     }
 }
@@ -335,7 +335,7 @@ fn test_rsplit_real() {
 fn test_split_real() {
     let keys = Keys::new();
 
-    for ((str, str_pad), (pat, pat_pad), _) in TEST_CASES_SPLIT {
+    for ((str, str_pad), (pat, pat_pad)) in TEST_CASES_SPLIT {
         keys.assert_split(str, Some(str_pad), pat, Some(pat_pad));
     }
 }
@@ -344,7 +344,7 @@ fn test_split_real() {
 fn test_rsplitn() {
     let keys = Keys::new();
 
-    for ((str, str_pad), (pat, pat_pad), _) in TEST_CASES_SPLIT {
+    for ((str, str_pad), (pat, pat_pad)) in TEST_CASES_SPLIT {
         for n in 0..=3 {
             keys.assert_rsplitn(str, Some(str_pad), pat, Some(pat_pad), n, 3);
         }
@@ -355,7 +355,7 @@ fn test_rsplitn() {
 fn test_splitn() {
     let keys = Keys::new();
 
-    for ((str, str_pad), (pat, pat_pad), _) in TEST_CASES_SPLIT {
+    for ((str, str_pad), (pat, pat_pad)) in TEST_CASES_SPLIT {
         for n in 0..=3 {
             keys.assert_splitn(str, Some(str_pad), pat, Some(pat_pad), n, 3);
         }
@@ -366,7 +366,7 @@ fn test_splitn() {
 fn test_split_terminator() {
     let keys = Keys::new();
 
-    for ((str, str_pad), (pat, pat_pad), _) in TEST_CASES_SPLIT {
+    for ((str, str_pad), (pat, pat_pad)) in TEST_CASES_SPLIT {
         keys.assert_split_terminator(str, Some(str_pad), pat, Some(pat_pad));
     }
 }
@@ -375,7 +375,7 @@ fn test_split_terminator() {
 fn test_rsplit_terminator() {
     let keys = Keys::new();
 
-    for ((str, str_pad), (pat, pat_pad), _) in TEST_CASES_SPLIT {
+    for ((str, str_pad), (pat, pat_pad)) in TEST_CASES_SPLIT {
         keys.assert_rsplit_terminator(str, Some(str_pad), pat, Some(pat_pad));
     }
 }
@@ -384,7 +384,7 @@ fn test_rsplit_terminator() {
 fn test_split_inclusive() {
     let keys = Keys::new();
 
-    for ((str, str_pad), (pat, pat_pad), _) in TEST_CASES_SPLIT {
+    for ((str, str_pad), (pat, pat_pad)) in TEST_CASES_SPLIT {
         keys.assert_split_inclusive(str, Some(str_pad), pat, Some(pat_pad));
     }
 }

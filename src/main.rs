@@ -10,6 +10,8 @@ mod server_key;
 
 mod assert_functions;
 
+// Used as the const argument for StaticUnsignedBigInt, specifying the max u64 length of a
+// ClearString
 const N: usize = 4;
 
 fn main() {
