@@ -3,7 +3,7 @@ use crate::server_key::pattern::{CharIter, IsMatch};
 use crate::server_key::ServerKey;
 use rayon::prelude::*;
 use rayon::range::Iter;
-use tfhe::integer::BooleanBlock;
+use tfhe::integer::{BooleanBlock, IntegerRadixCiphertext, RadixCiphertext};
 
 impl ServerKey {
     // Compare pat with str, with pat shifted right (in relation to str) the number given by iter
@@ -13,7 +13,6 @@ impl ServerKey {
         par_iter: Iter<usize>,
         ignore_pat_pad: bool,
     ) -> BooleanBlock {
-        let mut result = self.key.create_trivial_boolean_block(false);
         let (str, pat) = str_pat;
 
         let matched: Vec<_> = par_iter
@@ -34,12 +33,18 @@ impl ServerKey {
             })
             .collect();
 
-        for match_case in matched {
-            // One of the possible values of pat must match the str
-            self.key.boolean_bitor_assign(&mut result, &match_case);
-        }
+        let block_vec: Vec<_> = matched
+            .into_iter()
+            .map(|bool| {
+                let radix: RadixCiphertext = bool.into_radix(1, &self.key);
+                radix.into_blocks()[0].clone()
+            })
+            .collect();
 
-        result
+        // This will be 0 if there was no match, non-zero otherwise
+        let combined_radix = RadixCiphertext::from(block_vec);
+
+        self.key.scalar_ne_parallelized(&combined_radix, 0)
     }
 
     fn clear_compare_shifted(
@@ -47,7 +52,6 @@ impl ServerKey {
         str_pat: (CharIter, &str),
         par_iter: Iter<usize>,
     ) -> BooleanBlock {
-        let mut result = self.key.create_trivial_boolean_block(false);
         let (str, pat) = str_pat;
 
         let matched: Vec<_> = par_iter
@@ -59,12 +63,18 @@ impl ServerKey {
             })
             .collect();
 
-        for match_case in matched {
-            // One of the possible values of pat must match the str
-            self.key.boolean_bitor_assign(&mut result, &match_case);
-        }
+        let block_vec: Vec<_> = matched
+            .into_iter()
+            .map(|bool| {
+                let radix: RadixCiphertext = bool.into_radix(1, &self.key);
+                radix.into_blocks()[0].clone()
+            })
+            .collect();
 
-        result
+        // This will be 0 if there was no match, non-zero otherwise
+        let combined_radix = RadixCiphertext::from(block_vec);
+
+        self.key.scalar_ne_parallelized(&combined_radix, 0)
     }
 
     /// Returns `true` if the given pattern (either encrypted or clear) matches a substring of this

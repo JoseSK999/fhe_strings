@@ -6,16 +6,16 @@ const TEST_CASES_MATCH: [(&str, u32); 15] = [
     ("", 2),
     ("", 3),
     ("a", 0),
-    ("a", 1),
+    ("e", 1),
     ("o", 2),
     (" ", 2),
-    ("I F*", 3),
+    ("?", 3),
     ("<3", 3),
     ("foo", 0),
     ("foofoo", 0),
     ("foofoo", 1),
-    (" zelda", 12),
-    ("I F*** <3 zelda", 0),
+    (" don't", 12),
+    ("What is <3? Baby don't hurt me", 0),
 ];
 
 const TEST_WHITESPACE: [(&str, u32); 17] = [
@@ -104,7 +104,7 @@ const TEST_CASES_REPLACE: [((&str, u32), (&str, u32), (&str, u32)); 27] = [
     (("aa", 0), ("", 2), ("|", 0)),
     (("aa", 0), ("", 2), ("|", 1)),
     (("aa", 1), ("", 2), ("|empty|", 1)),
-    // Non empty string matches
+    // Non-empty string matches
     (("a", 0), ("a", 0), ("A", 0)),
     (("a", 2), ("a", 2), ("A", 1)),
     (("@1@2", 0), ("@", 2), ("", 0)),

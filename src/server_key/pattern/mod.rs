@@ -17,6 +17,8 @@ enum IsMatch {
     None,
 }
 
+// `length_checks` allow us to return early in the pattern matching functions, while the other
+// methods below contain logic for the different cases
 impl ServerKey {
     fn length_checks(&self, str: &FheString, pat: &FheString) -> IsMatch {
         let pat_len = pat.chars().len();

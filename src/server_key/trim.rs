@@ -10,9 +10,17 @@ pub struct SplitAsciiWhitespace {
 
 impl FheStringIterator for SplitAsciiWhitespace {
     fn next(&mut self, sk: &ServerKey) -> (FheString, BooleanBlock) {
-        let is_not_first_call = self.current_mask.is_some();
+        let str_len = self.state.chars().len();
 
-        if is_not_first_call {
+        if str_len == 0 || (self.state.is_padded() && str_len == 1) {
+            return (
+                FheString::empty(),
+                sk.key.create_trivial_boolean_block(false),
+            );
+        }
+
+        // If we aren't in the first next call `current_mask` is some
+        if self.current_mask.is_some() {
             self.remaining_string(sk);
         }
 
@@ -23,11 +31,11 @@ impl FheStringIterator for SplitAsciiWhitespace {
             || self.create_and_apply_mask(sk),
             || {
                 // If state after trim_start is empty it means the remaining string was either
-                // empty or only whitespace. Hence there are no more elements to return
+                // empty or only whitespace. Hence, there are no more elements to return
                 if let FheStringIsEmpty::Padding(val) = sk.is_empty(&state_after_trim) {
                     sk.key.boolean_bitnot(&val)
                 } else {
-                    panic!("Trim_start returns padded output")
+                    panic!("Empty str case was handled so 'state_after_trim' is padded")
                 }
             },
         )
@@ -189,6 +197,10 @@ impl ServerKey {
     pub fn trim_start(&self, str: &FheString) -> FheString {
         let mut result = str.clone();
 
+        if str.chars().is_empty() || (str.is_padded() && str.chars().len() == 1) {
+            return result;
+        }
+
         self.compare_and_trim(result.chars_mut().iter_mut(), false);
 
         // Result has potential nulls in the leftmost chars, so we compute the length difference
@@ -238,12 +250,16 @@ impl ServerKey {
     pub fn trim_end(&self, str: &FheString) -> FheString {
         let mut result = str.clone();
 
+        if str.chars().is_empty() || (str.is_padded() && str.chars().len() == 1) {
+            return result;
+        }
+
         // If str is padded, when we check for whitespace from the left we have to ignore the nulls
         let include_null = str.is_padded();
 
         self.compare_and_trim(result.chars_mut().iter_mut().rev(), include_null);
 
-        // If str was originally non padded, the result is now potentially padded as we may have
+        // If str was originally non-padded, the result is now potentially padded as we may have
         // made the last chars null, so we ensure it's padded in order to be used as input
         // to other functions safely
         if !str.is_padded() {
@@ -269,11 +285,12 @@ impl ServerKey {
     /// assert_eq!(trimmed, "hello world"); // Whitespace at both ends is removed
     /// ```
     pub fn trim(&self, str: &FheString) -> FheString {
-        let mut result = self.trim_start(str);
+        if str.chars().is_empty() || (str.is_padded() && str.chars().len() == 1) {
+            return str.clone();
+        }
 
-        result = self.trim_end(&result);
-
-        result
+        let result = self.trim_start(str);
+        self.trim_end(&result)
     }
 
     /// Creates an iterator over the substrings of this encrypted string, separated by any amount of

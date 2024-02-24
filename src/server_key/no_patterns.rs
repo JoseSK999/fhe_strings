@@ -42,17 +42,17 @@ impl ServerKey {
             let non_zero_chars: Vec<_> = str
                 .chars()
                 .par_iter()
-                .map(|char| self.key.scalar_ne_parallelized(char.ciphertext(), 0u8))
+                .map(|char| {
+                    let bool = self.key.scalar_ne_parallelized(char.ciphertext(), 0u8);
+                    bool.into_radix(16, &self.key)
+                })
                 .collect();
 
-            let mut len = self.key.create_trivial_zero_radix(16);
-
-            // If we add the number of non zero elements we get the actual length, without padding
-            for char in non_zero_chars {
-                let zero_or_one = char.into_radix(1, &self.key);
-
-                self.key.add_assign_parallelized(&mut len, &zero_or_one);
-            }
+            // If we add the number of non-zero elements we get the actual length, without padding
+            let len = self
+                .key
+                .sum_ciphertexts_parallelized(non_zero_chars.iter())
+                .expect("There's at least one padding character");
 
             FheStringLen::Padding(len)
         } else {

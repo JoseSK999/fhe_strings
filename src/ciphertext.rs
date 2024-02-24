@@ -77,6 +77,10 @@ impl FheString {
         FheString::from(enc_output)
     }
 
+    /// Constructs a trivial `FheString` from a plaintext string and a [`ServerKey`].
+    ///
+    /// ## WARNING:
+    /// This only formats the value to fit the ciphertext. The result is NOT encrypted.
     pub fn trivial(server_key: &ServerKey, str: &str) -> Self {
         let trivial = server_key
             .trivial_encrypt_ascii(str)
@@ -124,6 +128,8 @@ impl FheString {
         self.padded = to;
     }
 
+    // Converts a `RadixCiphertext` to a `FheString`, building a `FheAsciiChar` for each 4 blocks.
+    // Panics if the uint doesn't have a number of blocks that is multiple of 4.
     pub fn from_uint(uint: RadixCiphertext) -> FheString {
         let blocks_len = uint.blocks().len();
         assert_eq!(blocks_len % 4, 0);
@@ -143,27 +149,15 @@ impl FheString {
 
         FheString {
             enc_string: ascii_vec,
-            // We are assuming here there's no padding, so this isn't safe if we don' know it!
+            // We are assuming here there's no padding, so this isn't safe if we don't know it!
             padded: false,
         }
     }
 
+    // Converts a `FheString` to a `RadixCiphertext`, taking 4 blocks for each `FheAsciiChar`.
+    // We can then use a single large uint, that represents a string, in tfhe-rs operations.
     pub fn to_uint(&self, sk: &ServerKey) -> RadixCiphertext {
-        let blocks: Vec<_> = self
-            .chars()
-            .iter()
-            .rev()
-            .flat_map(|c| c.ciphertext().blocks().to_owned())
-            .collect();
-
-        let mut uint = RadixCiphertext::from_blocks(blocks);
-
-        if uint.blocks().is_empty() {
-            sk.key()
-                .extend_radix_with_trivial_zero_blocks_lsb_assign(&mut uint, 4);
-        }
-
-        uint
+        self.clone().into_uint(sk)
     }
 
     pub fn into_uint(self, sk: &ServerKey) -> RadixCiphertext {

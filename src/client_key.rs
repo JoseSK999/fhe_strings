@@ -8,6 +8,7 @@ pub struct ClientKey {
     key: FheClientKey,
 }
 
+/// Encrypted u16 value. It contains an optional `max` to restrict the range of the value.
 pub struct EncU16 {
     cipher: RadixCiphertext,
     max: Option<u16>,
@@ -71,8 +72,8 @@ impl ClientKey {
             .collect();
 
         // Optional padding
-        if let Some(bytes) = padding {
-            let null = (0..bytes).map(|_| self.key.encrypt_radix(0u8, 4));
+        if let Some(count) = padding {
+            let null = (0..count).map(|_| self.key.encrypt_radix(0u8, 4));
 
             enc_chars.extend(null);
         }
@@ -87,7 +88,8 @@ impl ClientKey {
     ///
     /// # Panics
     ///
-    /// This function will panic if the decrypted string is not ASCII.
+    /// This function will panic if the decrypted string is not ASCII or the `FheString` padding
+    /// flag doesn't match the actual string.
     pub fn decrypt_ascii(&self, enc_str: &FheString) -> String {
         let padded_flag = enc_str.is_padded();
         let mut prev_was_null = false;
@@ -126,6 +128,12 @@ impl ClientKey {
         String::from_utf8(bytes).unwrap()
     }
 
+    /// Encrypts a u16 value. It also takes an optional `max` value to restrict the range
+    /// of the encrypted u16.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the u16 value exceeds the provided `max`.
     pub fn encrypt_u16(&self, val: u16, max: Option<u16>) -> EncU16 {
         if let Some(max_val) = max {
             assert!(val <= max_val, "val cannot be greater than max")
